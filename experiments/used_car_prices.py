@@ -20,17 +20,17 @@ class RunConfiguration:
         self.num_samples = len(train_ds)
 
         # Embedding configuration
-        self.embedding_dim = 24
+        self.embedding_dim = 64
 
         # Transformer configuration
-        self.n_heads= 4
+        self.num_heads= 4
         self.num_layers = 3
         self.dim_feedforward = 512
         self.dropout = 0.1
         self.mask_ratio = 0.04
 
         # Encoder configuration
-        self.codec_dim = 5
+        self.codec_dim = 8
         self.width_mul = 1.0
         self.depth_mul = 1.0
 
@@ -42,14 +42,17 @@ class RunConfiguration:
 
         # Training configuration
         self.num_workers = 4
-        self.batch_size = 64
+        self.batch_size = 256
         self.num_epochs = 1000
-        self.learning_rate = 1e-5
-        self.weight_decay = 1e-8
+        self.learning_rate = 1e-4
+        self.weight_decay = 1e-10
         # self.mask_prob = 0.125
         self.viz_dir = "./viz"
 
 if __name__ == '__main__':
+    
+    mp.set_start_method('spawn')
+    
     base_columns = [
         # "Name",
         # "Location",
@@ -68,7 +71,7 @@ if __name__ == '__main__':
 
     categorical_cols = [
         # "Name",
-        "Location",
+        # "Location",
         "Year",
         "Fuel_Type",
         "Transmission",
@@ -82,7 +85,7 @@ if __name__ == '__main__':
 
     # Initialize dataset (assuming CSV has these columns)
     dataset = CSVDataset(
-        csv_path="../../data/used_car_prices/train-data.csv",
+        file_path="./data/used_car_prices/train-data.csv",
         numerical_cols=numerical_cols,
         categorical_cols=categorical_cols,
         max_workers=4

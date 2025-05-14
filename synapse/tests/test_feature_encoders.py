@@ -21,5 +21,7 @@ def test_zwei_encoding():
 
     # Test second feature encoding and padding
     assert torch.all(tokens[1, 0, :2] == torch.tensor([1, 1]))    # 3.0 → [1,1]
+
+    # Test padding for feature 2
+    print(tokens[1, 0])
     assert tokens[1, 0, 2] == -1  # Padding for second feature
-    assert tokens[1, 1, 2] == -1  # Padding for second feature

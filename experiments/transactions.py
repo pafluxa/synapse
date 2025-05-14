@@ -23,14 +23,14 @@ class RunConfiguration:
         self.embedding_dim = 16
 
         # Transformer configuration
-        self.n_heads= 2
-        self.num_layers = 2
-        self.dim_feedforward = 256
+        self.num_heads= 4
+        self.num_layers = 8
+        self.dim_feedforward = 1024
         self.dropout = 0.1
         self.mask_ratio = 0.25
 
         # Bottleneck configuration
-        self.bottleneck_dim = 3
+        self.codec_dim = 3
         self.bottleneck_hidden = [32, 64, 128]
 
         # MoE configuration
@@ -93,7 +93,7 @@ if __name__ == "__main__":
 
     # Initialize dataset (assuming CSV has these columns)
     dataset = CSVDataset(
-        csv_path="../../data/transactions/data.csv",
+        file_path="./data/transactions/data.csv",
         numerical_cols=numerical_cols,
         categorical_cols=categorical_cols,
         max_workers=8

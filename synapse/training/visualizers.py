@@ -1,6 +1,7 @@
 
 from os import read
 from typing import Dict, List, Tuple, Optional, Any
+import multiprocessing
 from multiprocessing import Process
 from multiprocessing import Queue
 
@@ -25,7 +26,7 @@ class AutoMotVisualizer:
         self.history = []
         self.viz_dir = path_to_viz
         self.num_epochs = num_epochs
-        self.q = Queue(maxsize=0)
+        self.q = Queue(maxsize=200)
         self.mu = 1.0
 
     def get_queue(self):
@@ -46,33 +47,39 @@ class AutoMotVisualizer:
 
     def listen(self):
         """ Spawn process to read from the queue """
-        reader_proc = Process(target=self.generator, args=((self.q),))
-        reader_proc.daemon = True
-        reader_proc.start()
+        reader_procs = []
+        for _ in range(8):
+            proc = Process(target=self.generator, args=((self.q),))
+            proc.daemon = True
+            reader_procs.append(proc)
+        
+        for proc in reader_procs:
+            proc.start()
 
-        return reader_proc
+        return reader_procs
 
     def visualize_epoch(self,
         epoch: int = 0,
         history: List[Dict[str, Any]] = [], metrics: Dict[str, float] = {}, codecs: np.ndarray = None):
         """Generate visualization plots for the current epoch"""
 
-        points = self.pca.fit_transform(codecs)
-        # points = codecs
+        # points = self.pca.fit_transform(codecs)
+        points = codecs
 
         plt.figure(figsize=(18, 12))
 
         # 1. Plot codec norms distribution
         plt.subplot(2, 2, 1)
         norms = np.linalg.norm(points, axis=1)
-        plt.hist(norms, bins=50, alpha=0.7, color='blue', density=True, label='Codec Norms', histtype='barstacked')
+        norms = norms / np.max(norms)
+        plt.hist(norms, bins=50, alpha=0.7, color='blue', label='Codec Norms', histtype='barstacked')
         plt.title(f'Epoch {epoch}: Codec Norms Distribution\n'
                  f'Mean: {norms.mean():.4f}, Var: {norms.var():.6f}')
         plt.xlabel('L2 Norm')
         plt.ylabel('Frequency')
-        plt.xlim(1E-2, 1E1)
-        plt.ylim(1E-2, 1E5)
-        plt.yscale('log')
+        plt.xlim(0.01, 1.1)
+        plt.ylim(0, points.shape[0]//2)
+        # plt.yscale('log')
         plt.legend()
 
         # 2. Plot first 3 dimensions of codecs
@@ -125,9 +132,10 @@ class AutoMotVisualizer:
         loss_components = {
             'Numerical': metrics['num_loss'],
             'Categorical': metrics['cat_loss'],
-            'SEC': metrics['sphere_loss'],
+            'Sph': metrics['sph_loss'],
+            'Uni': metrics['uni_loss'],
         }
-        plt.bar(loss_components.keys(), loss_components.values(), color=['blue', 'orange', 'green'])
+        plt.bar(loss_components.keys(), loss_components.values(), color=['blue', 'red'])
         plt.title('Loss Components Breakdown')
         plt.ylabel('Loss Value')
 
@@ -139,8 +147,9 @@ class AutoMotVisualizer:
         plt.plot(epochs, [h['loss'] for h in history], label='total loss')
         plt.plot(epochs, [h['num_loss'] for h in history], label='num loss')
         plt.plot(epochs, [h['cat_loss'] for h in history], label='cat loss')
-        plt.plot(epochs, [h['sphere_loss'] for h in history], label='sec')
-        plt.plot(epochs, [h['moe_loss'] for h in history], label='moe loss')
+        plt.plot(epochs, [h['sph_loss'] for h in history], label='sec')
+        plt.plot(epochs, [h['uni_loss'] for h in history], label='uni')
+        # plt.plot(epochs, [h['moe_loss'] for h in history], label='moe loss')
         #plt.axhline(y=0.0, color='r', linestyle='--', label='Zero variance')
         plt.title('Training Progress')
         plt.xlabel('Epoch')

@@ -23,17 +23,17 @@ class RunConfiguration:
         self.num_samples = len(train_ds)
 
         # Embedding configuration
-        self.embedding_dim = 16
+        self.embedding_dim = 64
 
         # Transformer configuration
-        self.n_heads= 4
-        self.num_layers = 4
-        self.dim_feedforward = 512
-        self.dropout = 0.3
+        self.num_heads= 8
+        self.num_layers = 6
+        self.dim_feedforward = 1024
+        self.dropout = 0.1
         self.mask_ratio = 0.1
 
         # Encoder configuration
-        self.codec_dim = 8
+        self.codec_dim = 12
         self.width_mul = 1.0
         self.depth_mul = 1.0
 
@@ -47,9 +47,9 @@ class RunConfiguration:
         self.num_workers = 4
         self.batch_size = 512
         self.num_epochs = 2000
-        self.learning_rate = 1e-6
-        self.weight_decay = 1e-9
-        self.viz_dir = "./viz"
+        self.learning_rate = 1e-4
+        self.weight_decay = 1e-8
+        self.viz_dir = "./vis"
 
 if __name__ == '__main__':
 
@@ -84,7 +84,7 @@ if __name__ == '__main__':
 
     # Initialize dataset (assuming CSV has these columns)
     dataset = CSVDataset(
-        csv_path="../../data/house_pricing/house_prices.csv",
+        file_path="./data/house_pricing/house_prices.csv",
         numerical_cols=numerical_cols,
         categorical_cols=categorical_cols,
         max_workers=4

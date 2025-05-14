@@ -15,7 +15,7 @@ from torch.utils.data import DataLoader
 
 from sklearn.decomposition import PCA
 
-from synapse.models.auto_encoders import CodecTransformerMoE
+from synapse.models.auto_encoders import TabularBERT
 from synapse.training.visualizers import AutoMotVisualizer
 
 
@@ -31,8 +31,9 @@ def timer(name, metrics_dict=None):
 class MaskedEmbeddingTrainer:
     def __init__(self, config):
         self.config = config
-
-        self.model = CodecTransformerMoE(config).cuda()
+        self.cat_dims = self.config.training_dataset.cardinalities
+        
+        self.model = TabularBERT(config).cuda()
 
         self.optimizer = optim.Adam(
             self.model.parameters(),
@@ -55,7 +56,29 @@ class MaskedEmbeddingTrainer:
         self.visualizer = AutoMotVisualizer(config.num_epochs, self.viz_dir)
 
         self.q = self.visualizer.get_queue()
-        self.viz_proc = self.visualizer.listen()
+        self.viz_procs = self.visualizer.listen()
+
+    def mask_data(self, x_num, x_cat, mask_prob=0.3):
+    
+        batch_size, num_num = x_num.shape
+        num_cat = x_cat.shape[1]
+        
+        mask = torch.rand(batch_size, num_num + num_cat) < mask_prob
+        num_mask = mask[:, :num_num]
+        cat_mask = mask[:, num_num:]
+        
+        # Mask numerical with Gaussian noise
+        masked_num = x_num.clone()
+        masked_num[num_mask] = torch.randn_like(masked_num)[num_mask]
+        
+        # Mask categorical with random categories
+        masked_cat = x_cat.clone()
+        for i in range(num_cat):
+            col_mask = cat_mask[:, i]
+            random_vals = torch.randint(0, self.cat_dims[i], (col_mask.sum().item(),))
+            masked_cat[:, i][col_mask] = random_vals.to(x_cat.device)
+        
+        return masked_num, masked_cat, mask
 
 
     def train_epoch(self, epoch: int):
@@ -66,10 +89,8 @@ class MaskedEmbeddingTrainer:
             'loss': 0.0,
             'num_loss': 0.0,
             'cat_loss': 0.0,
-            'moe_loss': 0.0,
-            'sphere_loss': 0.0,
-            'codec_norm': 0.0,
-            'mask_ratio': 0.0,
+            'sph_loss': 0.0,
+            'uni_loss': 0.0,
             # Timing metrics
             'data_load': 0.0,
             'forward_pass': 0.0,
@@ -83,26 +104,31 @@ class MaskedEmbeddingTrainer:
         progress_bar = tqdm(self.data_loader, desc=f"Epoch {epoch}")
 
         for batch_idx, (x_num, x_cat) in enumerate(progress_bar):
+            
             # Data loading and transfer
             with timer('data_load', metrics):
+                masked_num, masked_cat, mask = self.mask_data(x_num, x_cat)
+                masked_num = masked_num.cuda()
+                masked_cat = masked_cat.cuda()
+                mask = mask.cuda()
                 x_num = x_num.cuda(non_blocking=True)
                 x_cat = x_cat.cuda(non_blocking=True)
-
             # Zero gradients
             with timer('optimizer_zero_grad', metrics):
                 self.optimizer.zero_grad()  # More efficient in newer PyTorch
 
             # Forward pass
             with timer('forward_pass', metrics):
-                outputs = self.model(x_num, x_cat)
+                codecs, num_rec, cat_rec = self.model(x_num, x_cat)
+                outputs = (codecs, num_rec, cat_rec)
                 with torch.no_grad():
-                    codecs = outputs['codec'].clone().detach().cpu()
+                    codecs = codecs.clone().detach().cpu()
                     all_codecs.append(codecs)
 
             # Loss computation
             with timer('loss_compute', metrics):
-                loss, metrics_dict = self.model.compute_loss_and_metrics(
-                    x_num, x_cat, outputs,
+                loss, metrics_dict = self.model.loss(
+                    outputs, (x_num, x_cat), mask, epoch 
                 )
 
             # Backward pass
@@ -129,7 +155,6 @@ class MaskedEmbeddingTrainer:
         # Post-epoch processing
         with timer('post_epoch_processing'):
             codecs = torch.cat(all_codecs, dim=0).numpy()
-
             if not hasattr(self, 'history'):
                 self.history = []
             self.history.append(metrics)
@@ -160,79 +185,8 @@ class MaskedEmbeddingTrainer:
 
         return metrics
 
-    def _train_epoch(self, epoch: int):
-
-        self.model.moe.reset_expert_counts()
-        self.model.train()
-
-        metrics = {
-            'loss': 0.0,
-            'reconstruction': 0.0,
-            'sphere_loss': 0.0,
-            'numerical': 0.0,
-            'categorical': 0.0,
-            'moe_balance': 0.0,
-            'expert_diversity': 0.0,
-            'expert_entropy': 0.0,
-        }
-
-        # Store codecs for visualization
-        all_codecs = []
-
-        progress_bar = tqdm(self.data_loader, desc=f"Epoch {epoch}")
-        for x_num, x_cat in progress_bar:
-            x_num = x_num.cuda()
-            x_cat = x_cat.cuda()
-
-            # all gradients at zero
-            self.optimizer.zero_grad()
-
-            # Forward pass
-
-            outputs = self.model(x_num, x_cat)
-            all_codecs.append(outputs['codec'].detach())
-
-            # Compute loss
-            loss, metrics_dict = self.model.compute_loss(x_num, x_cat, outputs)
-
-            # backward pass
-            loss.backward()
-
-            self.optimizer.step()
-
-            # Update metrics
-            for k in metrics:
-                metrics[k] += metrics_dict[k]
-
-            progress_bar.set_postfix({
-                'loss': metrics_dict['loss'],
-                'sec_loss': metrics_dict['sphere_loss']
-            })
-
-        # Concatenate all codecs from the epoch
-        codecs = torch.cat(all_codecs, dim=0)
-
-        # Store metrics for tracking
-        if not hasattr(self, 'history'):
-            self.history = []
-        self.history.append(metrics)
-
-        history = [h for h in self.history]
-        # send data to visualization engine
-        payload = {
-            'epoch': epoch,
-            'metrics': metrics,
-            'codecs': codecs.cpu().numpy(),
-            'history': history,
-            'stop': False}
-
-        self.q.put(payload)
-
-        return metrics
-
-
     def train(self):
-        torch.backends.cuda.enable_flash_sdp(True)
+        # torch.backends.cuda.enable_flash_sdp(True)
 
         # print(f"\nNumber of parameters: {self.model.num_parameters}")
         print(f"\nNumber of training samples: {self.n_train_samples}")
@@ -242,8 +196,14 @@ class MaskedEmbeddingTrainer:
             print(f"  Total loss: {metrics['loss']:.4f}")
             print(f"  Num loss: {metrics['num_loss']:.4f}")
             print(f"  Cat loss: {metrics['cat_loss']:.4f}")
-            print(f"  Norm variance: {metrics['sphere_loss']:.4f}")
+            print(f"  Sph loss: {metrics['sph_loss']:.4f}")
+            print(f"  Uni loss: {metrics['uni_loss']:.4f}")
+            # print(f"  Norm variance: {metrics['sphere_loss']:.4f}")
         # stop visualization engine
         self.q.put({'stop': True})
         # Wait for the visualization engine to finish
-        self.viz_proc.join()
+        while not self.q.empty():
+            time.sleep(0.1)
+            
+        for proc in self.viz_procs:
+            proc.join()
