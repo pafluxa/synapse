@@ -12,6 +12,7 @@ from typing import Iterable, Tuple, List
 from einops import rearrange
 import torch
 import torch.nn as nn
+from torch.nn.utils.rnn import pad_sequence
 
 
 class Zwei(nn.Module):
@@ -56,7 +57,7 @@ class Zwei(nn.Module):
         # Determine padding
         self.max_depth = self.max_depths.max().item()
         self.total_tokens = self.n_features * self.max_depth
-        self.pad_token = -1
+        self.padval_ = -100
 
         # Register buffers
         self.register_buffer('depth_mask', self._create_depth_mask())
@@ -119,12 +120,7 @@ class Zwei(nn.Module):
             lows = torch.where(active_mask & (decisions == 1), mids, lows)
             highs = torch.where(active_mask & (decisions == 0), mids, highs)
 
-        tokens = rearrange(tokens, 'b f d -> f b d')
         tokens = tokens.long()
+        mask = tokens == -1
 
-        # Create variable sequence lengths
-        token_seq = []
-        for tok in tokens:
-            token_seq.append(tok[tok < 255].view(-1, batch_size))
-
-        return token_seq
+        return tokens , mask

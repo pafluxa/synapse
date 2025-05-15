@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from synapse.layers.feature_encoders import Zwei
+from synapse.models.layers.feature_encoders import Zwei
 
 def test_zwei_encoding():
     # Test Zwei with a sample input

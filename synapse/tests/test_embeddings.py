@@ -6,7 +6,7 @@ from einops import rearrange
 
 # from synapse.layers.embeddings import CategoricalEmbedding
 from synapse.layers.embeddings import NumericalEmbedding
-from synapse.layers.feature_encoders import Zwei
+from synapse.models.layers.feature_encoders import Zwei
 
 # def test_numerical_embedding_shapes_and_padding():
 #     max_depths = [2, 5]

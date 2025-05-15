@@ -1,19 +1,14 @@
 
 import time
 from contextlib import contextmanager
-import matplotlib.pyplot as plt
 import os
-from typing import Dict
 from tqdm import tqdm
 
 import numpy as np
 
 import torch
-from torch import nn
 from torch import optim
 from torch.utils.data import DataLoader
-
-from sklearn.decomposition import PCA
 
 from synapse.models.auto_encoders import TabularBERT
 from synapse.training.visualizers import AutoMotVisualizer
@@ -52,11 +47,19 @@ class MaskedEmbeddingTrainer:
             num_workers=4,
             persistent_workers=True
         )
-
+        self.val_loader = DataLoader(
+            config.validation_dataset,
+            batch_size=config.batch_size,
+            num_workers=2,
+            persistent_workers=True
+        )
+        
         self.visualizer = AutoMotVisualizer(config.num_epochs, self.viz_dir)
 
         self.q = self.visualizer.get_queue()
         self.viz_procs = self.visualizer.listen()
+        self.train_history = []
+        self.val_history = []
 
     def mask_data(self, x_num, x_cat, mask_prob=0.3):
     
@@ -119,7 +122,7 @@ class MaskedEmbeddingTrainer:
 
             # Forward pass
             with timer('forward_pass', metrics):
-                codecs, num_rec, cat_rec = self.model(x_num, x_cat)
+                codecs, num_rec, cat_rec = self.model(masked_num, masked_cat)
                 outputs = (codecs, num_rec, cat_rec)
                 with torch.no_grad():
                     codecs = codecs.clone().detach().cpu()
@@ -152,38 +155,47 @@ class MaskedEmbeddingTrainer:
                     'bwd_ms': metrics['backward_pass']*1000/(batch_idx+1)
                 })
 
-        # Post-epoch processing
-        with timer('post_epoch_processing'):
-            codecs = torch.cat(all_codecs, dim=0).numpy()
-            if not hasattr(self, 'history'):
-                self.history = []
-            self.history.append(metrics)
+        return metrics, np.concat(all_codecs, axis=0)
 
-            payload = {
-                'epoch': epoch,
-                'metrics': metrics,
-                'codecs': codecs,
-                'history': [h for h in self.history],
-                'stop': False
-            }
+    def evaluate_epoch(self, epoch: int):
+        if self.val_loader is None:
+            return
 
-            # Add timing breakdown
-            # payload['timings'] = {
-            #     'data_loading': metrics['data_load'],
-            #     'forward_pass': metrics['forward_pass'],
-            #     'backward_pass': metrics['backward_pass'],
-            #     'optimizer_step': metrics['optimizer_step'],
-            #     'per_batch_avg': {
-            #         'data': metrics['data_load']/len(progress_bar),
-            #         'forward': metrics['forward_pass']/len(progress_bar),
-            #         'backward': metrics['backward_pass']/len(progress_bar),
-            #         'step': metrics['optimizer_step']/len(progress_bar)
-            #     }
-            # }
+        self.model.eval()
+        val_metrics = {
+            'loss': 0.0,
+            'num_loss': 0.0,
+            'cat_loss': 0.0,
+            'sph_loss': 0.0,
+            'uni_loss': 0.0,
+        }
+        all_codecs = []
+        with torch.no_grad():
+            for x_num, x_cat in tqdm(self.val_loader, desc=f"Validation {epoch}"):
+                masked_num, masked_cat, mask = self.mask_data(x_num, x_cat)
 
-            self.q.put(payload)
+                masked_num = masked_num.cuda()
+                masked_cat = masked_cat.cuda()
+                mask = mask.cuda()
+                x_num = x_num.cuda(non_blocking=True)
+                x_cat = x_cat.cuda(non_blocking=True)
 
-        return metrics
+                with torch.no_grad():
+                    cuda_codecs, num_rec, cat_rec = self.model(x_num, x_cat)
+                    outputs = (cuda_codecs, num_rec, cat_rec)
+                    codecs = cuda_codecs.clone().detach().cpu().numpy()
+                    all_codecs.append(codecs)
+                    metrics_dict = self.model.loss(outputs, (x_num, x_cat), mask, epoch)
+
+                for k in val_metrics:
+                    val_metrics[k] += metrics_dict.get(k, 0.0)
+
+        # Average metrics
+        num_batches = len(self.val_loader)
+        for k in val_metrics:
+            val_metrics[k] /= num_batches
+
+        return val_metrics, np.hstack(all_codecs)
 
     def train(self):
         # torch.backends.cuda.enable_flash_sdp(True)
@@ -191,18 +203,32 @@ class MaskedEmbeddingTrainer:
         # print(f"\nNumber of parameters: {self.model.num_parameters}")
         print(f"\nNumber of training samples: {self.n_train_samples}")
         for epoch in range(self.config.num_epochs):
-            metrics = self.train_epoch(epoch)
+            train_metrics, t_codecs = self.train_epoch(epoch)
+            self.train_history.append(train_metrics)
             print(f"\nEpoch {epoch} metrics:")
-            print(f"  Total loss: {metrics['loss']:.4f}")
-            print(f"  Num loss: {metrics['num_loss']:.4f}")
-            print(f"  Cat loss: {metrics['cat_loss']:.4f}")
-            print(f"  Sph loss: {metrics['sph_loss']:.4f}")
-            print(f"  Uni loss: {metrics['uni_loss']:.4f}")
-            # print(f"  Norm variance: {metrics['sphere_loss']:.4f}")
+            print(f"  Total loss: {train_metrics['loss']:.4f}")
+            print(f"  Num loss: {train_metrics['num_loss']:.4f}")
+            print(f"  Cat loss: {train_metrics['cat_loss']:.4f}")
+            print(f"  Sph loss: {train_metrics['sph_loss']:.4f}")
+            print(f"  Uni loss: {train_metrics['uni_loss']:.4f}")
+            # val_metrics, v_codecs = self.evaluate_epoch(epoch)
+            # self.val_history.append(val_metrics)
+            
+            payload = {
+                'epoch': epoch,
+                'codecs': t_codecs,
+                'history': self.train_history,
+                'metrics': train_metrics,
+                'stop': False
+            }
+            self.q.put(payload)
+            
         # stop visualization engine
         self.q.put({'stop': True})
+        
         # Wait for the visualization engine to finish
         while not self.q.empty():
+            self.q.put({'stop': True})
             time.sleep(0.1)
             
         for proc in self.viz_procs:

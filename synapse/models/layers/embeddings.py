@@ -1,70 +1,169 @@
+"""Embedding layers for categorical and numerical data.
+
+This module provides embedding layers that can handle both categorical and numerical
+data with proper padding and masking. The embeddings are designed to work with
+variable-length sequences and batch processing.
+
+Classes:
+    CategoricalEmbedding: Embedding layer for categorical data.
+    NumericalEmbedding: Embedding layer for numerical data.
+"""
+
+import math
+from typing import List, Tuple, Optional
+
+from einops import rearrange
 import torch
 from torch import nn
-import torch.nn.functional as F
+from torch.nn.utils.rnn import pad_sequence
 
-class NumericalEmbedding(nn.Module):
-    def __init__(self, num_numerical, embedding_dim):
-        super().__init__()
-        # Project numerical features to embedding space
-        self.proj = nn.Linear(num_numerical, embedding_dim)
-
-    def forward(self, x):
-        # x: [batch_size, num_numerical]
-        return self.proj(x)  # [batch_size, embedding_dim]
 
 class CategoricalEmbedding(nn.Module):
-    def __init__(self, categorical_dims, embedding_dim):
+    """Embedding layer for categorical data with padding and masking.
+
+    This layer handles categorical variables of different cardinalities by creating
+    separate embedding layers for each variable. The embedding dimension for each
+    variable is determined by the square root of its cardinality.
+
+    Attributes:
+        padval_: Padding value used for masking (default: -1).
+        min_emb_dim_: Minimum embedding dimension across all variables.
+        max_emb_dim_: Maximum embedding dimension across all variables.
+        embedding_layers_: List of embedding layers for each categorical variable.
+    """
+
+    padval_: int = -1
+
+    def __init__(
+        self,
+        cardinalities: List[int],
+        max_emb_dim: int = 0,
+        min_emb_dim: int = 0,
+    ) -> None:
+        """Initialize the CategoricalEmbedding layer.
+
+        Args:
+            cardinalities: List of cardinalities for each categorical variable.
+            max_emb_dim: Maximum embedding dimension to use (default: -1 for auto).
+            min_emb_dim: Minimum embedding dimension to use (default: 1,000,000 for auto).
+        """
         super().__init__()
-        # Create embedding layers for each categorical feature
-        self.embeddings = nn.ModuleList([
-            nn.Embedding(num_embeddings=dim, embedding_dim=embedding_dim)
-            for dim in categorical_dims
+        # Compute min/max embedding dimensions
+        self.min_emb_dim_ = max([
+            min_emb_dim,
+            int(math.ceil(min(cardinalities)**0.5) + 1)
+        ])
+        self.max_emb_dim_ = max([
+            max_emb_dim,
+            int(math.ceil(max(cardinalities)**0.5) + 1)
         ])
 
-    def forward(self, x_categorical):
-        # x_categorical: [batch_size, num_categorical]
-        embedded = [emb(x_categorical[:, i]) for i, emb in enumerate(self.embeddings)]
-        return torch.stack(embedded, dim=1).sum(dim=1)  # [batch_size, embedding_dim]
+        assert self.min_emb_dim_ > 0, "Minimum embedding dimension must be positive"
+
+        self.embedding_layers_ = nn.ModuleList()
+        for c in cardinalities:
+            d = self.min_emb_dim_  #in_emb_dim_, int(math.ceil(c**0.5) + 1))
+            self.embedding_layers_.append(
+                nn.Sequential(
+                    nn.Embedding(c, d),
+                    nn.LayerNorm(d),
+                )
+            )
+
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Forward pass through the embedding layer.
+
+        Args:
+            x: Categorical data tensor with shape (n_categories, batch_size).
+
+        Returns:
+            Tuple containing:
+                - Padded embedding tensor with shape (seq_len, batch_size, emb_dim)
+                - Padding mask tensor with shape (batch_size, seq_len)
+        """
+        embeddings = []
+        for i, layer in enumerate(self.embedding_layers_):
+            emb = rearrange(layer(x[:, i]), 'b d -> d b')
+            embeddings.append(emb)
+
+        padded_emb_tensor = pad_sequence(embeddings, padding_value=self.padval_)
+        padded_emb_tensor = rearrange(padded_emb_tensor, 'd s b -> b s d')
+        padding_mask = padded_emb_tensor == self.padval_
+
+        return padded_emb_tensor, padding_mask
 
 
-class FeatureSpecificEmbedding(nn.Module):
-    def __init__(self, num_features, d_model):
+class NumericalEmbedding(nn.Module):
+    """Embedding layer for numerical data with padding and masking.
+
+    This layer handles numerical variables by first converting them to tokens and then
+    applying embedding layers. The embedding dimension is determined by the maximum
+    depth of the binary encoding.
+
+    Attributes:
+        padval_: Padding value used for masking (default: -1).
+        min_emb_dim_: Minimum embedding dimension across all variables.
+        max_emb_dim_: Maximum embedding dimension across all variables.
+        embedding_layers_: List of embedding layers for each numerical variable.
+    """
+
+    padval_: int = -1
+
+    def __init__(
+        self,
+        max_depths: List[int],
+        max_emb_dim: int = -1,
+        min_emb_dim: int = 1_000_000,
+    ) -> None:
+        """Initialize the NumericalEmbedding layer.
+
+        Args:
+            max_depths: List of maximum depths for binary encoding of each numerical variable.
+            max_emb_dim: Maximum embedding dimension to use (default: -1 for auto).
+            min_emb_dim: Minimum embedding dimension to use (default: 1,000,000 for auto).
+        """
         super().__init__()
-        self.feature_pos = nn.Parameter(torch.randn(num_features, d_model))
+        # Compute min/max embedding dimensions
+        self.min_emb_dim_ = min([
+            min_emb_dim,
+            int(math.ceil(min(max_depths)**0.5) + 1)
+        ])
+        self.max_emb_dim_ = max([
+            max_emb_dim,
+            int(math.ceil(max(max_depths)**0.5) + 1)
+        ])
 
-    def forward(self, x_embeddings):
-        # x_embeddings: [batch, num_features, d_model] (pre-combined numerical + categorical)
-        return x_embeddings + self.feature_pos.unsqueeze(0)  # Add per-feature offset
+        assert self.min_emb_dim_ > 0, "Minimum embedding dimension must be positive"
 
+        self.embedding_layers_ = nn.ModuleList()
+        for m in max_depths:
+            d = int(math.ceil(m**0.5) + 1)
+            self.embedding_layers_.append(
+                nn.Sequential(
+                    nn.Embedding(3, m),
+                    nn.LayerNorm(m),
+                )
+            )
 
-class InverseEmbedding(nn.Module):
-    def __init__(self, embedding_layer):
-        super().__init__()
-        self.embedding = embedding_layer  # The original embedding layer
+    def forward(self, tokens: List[torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Forward pass through the embedding layer.
 
-    def forward(self, x):
-        # x: shape [..., embedding_dim]
-        x_norm = F.normalize(x, p=2, dim=-1)  # L2 normalize input
-        emb_norm = F.normalize(self.embedding.weight, p=2, dim=-1)  # L2 normalize embeddings
-        similarities = x_norm @ emb_norm.T
+        Args:
+            tokens: List of token tensors for each numerical variable.
 
-        return similarities
-        # return F.softmax(similarities, dim=-1)
-        # return torch.argmax(similarities, dim=-1)
+        Returns:
+            Tuple containing:
+                - Padded embedding tensor with shape (seq_len, batch_size, emb_dim)
+                - Padding mask tensor with shape (batch_size, seq_len)
+        """
+        embeddings = []
+        for i, layer in enumerate(self.embedding_layers_):
+            emb = layer(tokens[:, i])
+            embeddings.append(emb)
 
-class EnhancedInverseEmbedding(nn.Module):
-    def __init__(self, embedding_layer):
-        super().__init__()
-        self.embedding = embedding_layer
-        self.proj1 = nn.Linear(embedding_layer.embedding_dim,
-                              embedding_layer.embedding_dim*2)
-        self.proj2 = nn.Linear(embedding_layer.embedding_dim*2,
-                              embedding_layer.embedding_dim)
-        self.ln = nn.LayerNorm(embedding_layer.embedding_dim)
+        # padded_emb_tensor = pad_sequence(embeddings, padding_value=self.padval_)
+        # padded_emb_tensor = rearrange(padded_emb_tensor, 'd s b -> s b d')
+        # padding_mask = padded_emb_tensor == self.padval_
+        # padding_mask = rearrange(padding_mask, 's b d -> b s d')[:, :, 0]
 
-    def forward(self, x):
-        residual = x
-        x = F.gelu(self.proj1(x))
-        x = self.proj2(x)
-        x = self.ln(x + residual)  # Skip connection
-        return x @ self.embedding.weight.T
+        return torch.cat(embeddings)  # padded_emb_tensor, padding_mask
