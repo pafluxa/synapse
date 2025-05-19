@@ -108,7 +108,8 @@ class VMFLoss(nn.Module):
         if batch_size > 1:
             cos_sim = torch.matmul(x_normalized, x_normalized.T)
             mask = ~torch.eye(batch_size, dtype=torch.bool, device=x.device)
-            repulsion = -torch.mean(cos_sim[mask])
+            cos_vals = cos_sim[mask]
+            repulsion = torch.mean(F.relu(cos_vals) ** 2)
         else:
             repulsion = torch.tensor(0.0, device=x.device)
 
