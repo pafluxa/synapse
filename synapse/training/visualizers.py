@@ -100,19 +100,24 @@ class SnapshotGenerator:
     ):
         """Generate visualization plots for the current epoch"""
 
-        points = np.dot(codecs, proj)
+        points = codecs  #np.dot(codecs, proj)
+        max_x = np.max(points[:, 0])
+        max_y = np.max(points[:, 1])
+        max_z = np.max(points[:, 2])
+        p_max = max([max_x, max_y, max_z])
+        norms = np.linalg.norm(points, axis=1)
+        max_norm = np.max(norms)
 
         plt.figure(figsize=(18, 12))
 
         # 1. Plot codec norms distribution
         plt.subplot(2, 2, 1)
-        norms = np.linalg.norm(points, axis=1)
-        plt.hist(norms, bins=50, alpha=0.7, color='blue', label='Codec Norms', histtype='barstacked')
+        plt.hist(norms / max_norms, bins=50, alpha=0.7, color='blue', label='Codec Norms', histtype='barstacked')
         plt.title(f'Epoch {epoch}: Codec Norms Distribution\n'
                  f'Mean: {norms.mean():.4f}, Var: {norms.var():.6f}')
-        plt.xlabel('L2 Norm')
+        plt.xlabel('Norm (normalized to max)')
         plt.ylabel('Frequency')
-        plt.xlim(0.01, 6.0)
+        plt.xlim(0.01, 1.0)
         plt.ylim(0, points.shape[0]//5)
         # plt.yscale('log')
         plt.legend()
@@ -121,29 +126,27 @@ class SnapshotGenerator:
         plt.subplot(2, 2, 2, projection='3d')
         if codecs.shape[1] >= 3:
 
-            # points = points / self.mu
+            points = points / p_max
+
             ax = plt.gca()
             ax.set_aspect('equal')
             ax.scatter(points[:, 0], points[:, 1], points[:, 2], alpha=0.1, s=0.1)
 
-            # Create + 2 sigma sphere for reference
-            norms = np.linalg.norm(points, axis=1)
-
-            r1 = 1.5
+            r1 = 1.0
             u, v = np.mgrid[0:2*np.pi:20j, 0:np.pi:10j]
             x = r1 * np.cos(u)*np.sin(v)
             y = r1 * np.sin(u)*np.sin(v)
             z = r1 * np.cos(v)
             ax.plot_wireframe(x, y, z, color="r", alpha=0.1, label="reference")
 
-            r = r1
+            r = 1.2
             ax.quiver(-r, 0, 0, 2 * r, 0, 0, color='k', arrow_length_ratio=0.05) # x-axis
             ax.quiver(0, -r, 0, 0, 2 * r, 0, color='k', arrow_length_ratio=0.05) # y-axis
             ax.quiver(0, 0, -r, 0, 0, 2 * r, color='k', arrow_length_ratio=0.05) # z-axis
 
-            ax.set_xlim(-2.2, 2.2)
-            ax.set_ylim(-2.2, 2.2)
-            ax.set_zlim(-2.2, 2.2)
+            ax.set_xlim(-1.2, 1.2)
+            ax.set_ylim(-1.2, 1.2)
+            ax.set_zlim(-1.2, 1.2)
 
             plt.title(f'First 3 Dimensions of Codecs\n(Total dim: {codecs.shape[1]})')
 
