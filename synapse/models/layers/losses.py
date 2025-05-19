@@ -29,6 +29,7 @@ def hypersphere_autoencoder_loss(x: torch.Tensor,
     valid_dists = pairwise_dists[mask]
 
     # Stabilized 1/r² with soft clipping and damping
+    eps = 1e-8
     min_dist = 0.5
     max_dist = 2.0
     dist_ratio = (valid_dists / min_dist).clamp_min(1.0)
