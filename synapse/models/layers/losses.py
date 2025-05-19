@@ -106,7 +106,8 @@ class VMFLoss(nn.Module):
         )
 
         # Dot product κ μᵀx
-        dot_product = torch.sum(self.mu * x_normalized, dim=-1)
+        mu = F.normalize(self.mu, p=2, dim=-1)
+        dot_product = torch.sum(mu * x_normalized, dim=-1)
 
         # vMF negative log-likelihood
         nll = -(log_C + kappa * dot_product)
