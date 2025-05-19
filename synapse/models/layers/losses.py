@@ -14,26 +14,24 @@ def hypersphere_autoencoder_loss(x: torch.Tensor,
     - Normalized loss scales
     """
     norms = x.norm(p=2, dim=-1, keepdim=True)
+    norms_no_grad = norms.clone().detach()
     # 1. Radius control (softly encourages target radius)
-    radius_loss = torch.log1p((norms - target_radius).abs()).mean()
+    radius_loss = ((norms - norms_no_grad) ** 2).mean()
 
     # 2. Normalized directions (stop gradient for norm)
-    norms_no_grad = norms.clone().detach()
     x_normed = x / (norms_no_grad + 1e-7)
 
-    # 3. Stability-controlled uniformity
-    cos_sim = x_normed @ x_normed.T
-    cos_sim = cos_sim.clamp(-0.999, 0.999)  # Avoid +-1 extremes
+    # Pairwise squared Euclidean distances
+    pairwise_dists = torch.cdist(x_normed, x_normed, p=2)  # [N, N]
 
-    # Mask out self-similarities
+    # Mask out self-interactions
     mask = ~torch.eye(len(x), dtype=torch.bool, device=x.device)
-    pairwise_sims = cos_sim[mask]
+    valid_dists = pairwise_dists[mask]
 
-    # Clipped exponential uniformity (gradient-scaled)
-    uniformity = torch.exp(2 * pairwise_sims.abs()) - 1  # [0, e^2-1] range
-    uniformity_loss = torch.log1p(uniformity.mean())  # Compressed to [0, ~1.5]
+    # Inverse-square repulsion (clipped for stability)
+    repulsion = (1.0 / (valid_dists.pow(2) + 1e-8)).mean()
 
-    return alpha * radius_loss, beta * uniformity_loss
+    return alpha * radius_loss, beta * repulsion
 
 def hypersphere_autoencoder_loss_2(x: torch.Tensor, alpha: float = 1.0, beta: float = 1.0):
     """
