@@ -119,7 +119,7 @@ class VMFLoss(nn.Module):
         # Repulsion loss: discourage vector collapse (maximize spread)
         cos_sim = torch.matmul(x_normalized, x_normalized.T)
         mask = ~torch.eye(x.size(0), dtype=torch.bool, device=x.device)
-        repulsion = torch.mean(cos_sim[mask] ** 2)
+        repulsion = -torch.mean(cos_sim[mask])
 
         # Total loss
         vmf = nll.mean()
