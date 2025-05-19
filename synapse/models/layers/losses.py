@@ -75,7 +75,7 @@ class VMFLoss(nn.Module):
         self.kappa = nn.Parameter(torch.tensor(1.0)) if learn_kappa else self.register_buffer('kappa', torch.tensor(1.0))
 
         self.log_bessel_fn = LogBessel(dim=dim)
-        self.repulsion_strength = nn.Parameter(torch.tensor(0.1))
+        self.repulsion_strength = 1.0  #nn.Parameter(torch.tensor(0.01))
 
     def forward(self, x: torch.Tensor):
         x_norm = F.normalize(x, dim=-1)
