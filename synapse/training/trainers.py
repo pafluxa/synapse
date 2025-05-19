@@ -29,7 +29,8 @@ class MaskedEmbeddingTrainer:
     metrics = {
         'loss': 0.0,
         'mse_loss': 0.0,
-        'sph_vmf': 0.0,
+        'kld_loss': 0.0,
+        'sph_ent': 0.0,
         'sph_rad': 0.0,
         'sph_rep': 0.0,
         # Timing metrics

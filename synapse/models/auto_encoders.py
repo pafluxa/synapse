@@ -127,7 +127,7 @@ class TabularBERT(nn.Module):
         sph_ent, sph_rmu, sph_rep, sph_metrics = self.sph_loss_fn(codecs)
 
         # Total loss
-        total_loss = rec_loss + w2 * sph_rmu + w2 * sph_rep + w2 * sph_ent + w1 * kl_loss
+        total_loss = rec_loss + sph_rmu + sph_rep + w2 * sph_ent + w1 * kl_loss
 
         return total_loss, {
             'loss': total_loss.item(),

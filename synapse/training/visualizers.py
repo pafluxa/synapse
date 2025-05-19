@@ -101,11 +101,6 @@ class SnapshotGenerator:
         """Generate visualization plots for the current epoch"""
 
         points = np.dot(codecs, proj)
-        max_x = np.max(points[:, 0])
-        max_y = np.max(points[:, 1])
-        max_z = np.max(points[:, 2])
-        # p_max = max([max_x, max_y, max_z])
-        # points = points / p_max
         norms = np.linalg.norm(points, axis=1)
 
         plt.figure(figsize=(18, 12))
@@ -167,9 +162,10 @@ class SnapshotGenerator:
         ax.set_yscale('log')
         loss_components = {
             'MSE': metrics['mse_loss'],
-            'VMF': metrics['sph_vmf'],
-            'Rad. reg': metrics['sph_rad'],
-            'Rep. reg': metrics['sph_rep'],
+            'Ent': metrics['sph_ent'],
+            'KLD': metrics['kld_loss'],
+            'Rad': metrics['sph_rad'],
+            'Rep': metrics['sph_rep'],
         }
         plt.bar(loss_components.keys(), loss_components.values(), color=['blue', 'red', 'green'])
         plt.title('Loss Components Breakdown')
@@ -180,11 +176,12 @@ class SnapshotGenerator:
         ax = plt.gca()
 
         epochs = list(range(len(history)))
-        plt.plot(epochs, [h['loss'] for h in history], label='total loss')
-        plt.plot(epochs, [h['mse_loss'] for h in history], label='mse loss')
-        plt.plot(epochs, [h['sph_vmf'] for h in history], label='vmf loss')
-        plt.plot(epochs, [h['sph_rad'] for h in history], label='rad. reg')
-        plt.plot(epochs, [h['sph_rep'] for h in history], label='rep. reg')
+        plt.plot(epochs, [h['loss'] for h in history], label='loss')
+        plt.plot(epochs, [h['mse_loss'] for h in history], label='MSE')
+        plt.plot(epochs, [h['kld_loss'] for h in history], label='KLD')
+        plt.plot(epochs, [h['sph_ent'] for h in history], label='entropy')
+        plt.plot(epochs, [h['sph_rad'] for h in history], label='radial')
+        plt.plot(epochs, [h['sph_rep'] for h in history], label='repulsion')
         plt.title('Training Progress')
         plt.xlabel('Epoch')
         plt.legend()
