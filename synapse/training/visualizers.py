@@ -139,9 +139,9 @@ class SnapshotGenerator:
             ax.quiver(0, -r, 0, 0, 2 * r, 0, color='k', arrow_length_ratio=0.05) # y-axis
             ax.quiver(0, 0, -r, 0, 0, 2 * r, color='k', arrow_length_ratio=0.05) # z-axis
 
-            ax.set_xlim(-(avg_norm ** 0.5) * 1.5, avg_norm * 1.5)
-            ax.set_ylim(-(avg_norm ** 0.5) * 1.5, avg_norm * 1.5)
-            ax.set_zlim(-(avg_norm ** 0.5) * 1.5, avg_norm * 1.5)
+            ax.set_xlim(-(avg_norm ** 0.5) * 1.5, (avg_norm ** 0.5) * 1.5)
+            ax.set_ylim(-(avg_norm ** 0.5) * 1.5, (avg_norm ** 0.5) * 1.5)
+            ax.set_zlim(-(avg_norm ** 0.5) * 1.5, (avg_norm ** 0.5) * 1.5)
 
             plt.title(f'First 3 Dimensions of Codecs\n(Total dim: {codecs.shape[1]})')
 
