@@ -102,7 +102,7 @@ class TabularBERT(nn.Module):
         expanded = self.decoder_expand(codec)
         decoded_features = expanded.view(batch_size, self.num_features, self.d_model)
 
-        return compressed, decoded_features, mu, log_var
+        return codec, decoded_features, mu, log_var
 
     def loss(self, outputs, targets, mask, epoch):
         codecs, decoded, mu, log_var = outputs
