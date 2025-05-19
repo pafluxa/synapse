@@ -88,8 +88,8 @@ class VMFLoss(nn.Module):
         ratio = bessel_iv(torch.tensor(nu + 1, device=kappa.device, dtype=kappa.dtype), kappa) \
                 / (bessel_iv(torch.tensor(nu, device=kappa.device, dtype=kappa.dtype), kappa) + 1e-10)
 
-        entropy = -kappa * ratio + log_C
-        neg_entropy = -entropy.mean()
+        entropy = kappa * ratio - log_C
+        neg_entropy = entropy.mean()
 
         # Radius regularization
         norms = x.norm(p=2, dim=-1)
@@ -108,7 +108,7 @@ class VMFLoss(nn.Module):
         else:
             repulsion = torch.tensor(0.0, device=x.device)
 
-        total_loss = neg_entropy + self.radius_reg_weight * radius_reg # + self.repulsion_weight * repulsion
+        total_loss = neg_entropy + self.radius_reg_weight * radius_reg + self.repulsion_weight * repulsion
 
         metrics = {
             'sph_vmf': neg_entropy,
