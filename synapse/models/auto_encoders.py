@@ -133,9 +133,9 @@ class TabularBERT(nn.Module):
             'loss': total_loss.item(),
             'mse_loss': rec_loss.item(),
             'kl_loss': kl_loss.item(),
-            'sph_vmf': w3 * sph_metrics['sph_vmf'].item(),
-            'sph_rep': w2 * sph_metrics['sph_rep'].item(),
-            'sph_rad': w1 * sph_metrics['sph_rad'].item(),
+            'sph_vmf': sph_metrics['sph_vmf'].item(),
+            'sph_rep': sph_metrics['sph_rep'].item(),
+            'sph_rad': sph_metrics['sph_rad'].item(),
         }
 
 # import math
