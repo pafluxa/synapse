@@ -125,21 +125,21 @@ class SnapshotGenerator:
             ax.set_aspect('equal')
             ax.scatter(points[:, 0], points[:, 1], points[:, 2], alpha=0.1, s=0.1)
 
-            r1 = 9.0
+            r1 = 1.0
             u, v = np.mgrid[0:2*np.pi:20j, 0:np.pi:10j]
             x = r1 * np.cos(u)*np.sin(v)
             y = r1 * np.sin(u)*np.sin(v)
             z = r1 * np.cos(v)
             ax.plot_wireframe(x, y, z, color="r", alpha=0.1, label="reference")
 
-            r = 10.0
+            r = 1.1
             ax.quiver(-r, 0, 0, 2 * r, 0, 0, color='k', arrow_length_ratio=0.05) # x-axis
             ax.quiver(0, -r, 0, 0, 2 * r, 0, color='k', arrow_length_ratio=0.05) # y-axis
             ax.quiver(0, 0, -r, 0, 0, 2 * r, color='k', arrow_length_ratio=0.05) # z-axis
 
-            ax.set_xlim(-11, 11)
-            ax.set_ylim(-11, 11)
-            ax.set_zlim(-11, 11)
+            ax.set_xlim(-1.5, 1.5)
+            ax.set_ylim(-1.5, 1.5)
+            ax.set_zlim(-1.5, 1.5)
 
             plt.title(f'First 3 Dimensions of Codecs\n(Total dim: {codecs.shape[1]})')
 
