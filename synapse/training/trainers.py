@@ -113,7 +113,6 @@ class MaskedEmbeddingTrainer:
         metrics = {
             'loss': 0.0,
             'mse_loss': 0.0,
-            'kld_loss': 0.0,
             'sph_rad': 0.0,
             'sph_rep': 0.0,
             'sph_ent': 0.0,
@@ -145,8 +144,8 @@ class MaskedEmbeddingTrainer:
 
             # Forward pass
             with timer('forward_pass', metrics):
-                codecs, decoded, mu, log_var = self.model(masked_num, masked_cat)
-                outputs = (codecs, decoded, mu, log_var)
+                codecs, decoded = self.model(masked_num, masked_cat)
+                outputs = (codecs, decoded)
             # Loss computation
             with timer('loss_compute', metrics):
                 loss, metrics_dict = self.model.loss(
@@ -226,10 +225,8 @@ class MaskedEmbeddingTrainer:
             print(f"\nEpoch {epoch} metrics:")
             print(f"  loss: {train_metrics['loss']:.4f}")
             print(f"  MSE: {train_metrics['mse_loss']:.4f}")
-            print(f"  KLD: {train_metrics['kld_loss']:.4f}")
             print(f"  Radial: {train_metrics['sph_rad']:.4f}")
             print(f"  Repulsion: {train_metrics['sph_rep']:.4f}")
-            print(f"  Entropy: {train_metrics['sph_ent']:.4f}")
             # val_metrics, v_codecs = self.evaluate_epoch(epoch)
             # self.val_history.append(val_metrics)
 

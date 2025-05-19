@@ -9,7 +9,7 @@ from einops import rearrange
 
 from synapse.models.layers.embeddings import CategoricalEmbedding, NumericalEmbedding
 from synapse.models.layers.feature_encoders import Zwei
-from synapse.models.layers.losses import VMFLoss
+from synapse.models.layers.losses import hypersphere_autoencoder_loss
 
 
 class TabularBERT(nn.Module):
@@ -51,28 +51,20 @@ class TabularBERT(nn.Module):
         self.encoder = nn.TransformerEncoder(encoder_layer, self.num_layers)
 
         # VAE bottleneck
-        self.bottleneck_shared = nn.Sequential(
+        self.bottleneck = nn.Sequential(
             nn.Linear(self.d_model * self.num_features, 100),
             nn.LeakyReLU(),
             nn.Linear(100, 100),
+            nn.Linear(100, self.codec_dim)
         )
-
-        self.bottleneck = nn.Linear(100, self.codec_dim)
-        self.fc_mu = nn.Linear(1, self.codec_dim)
-        self.fc_log_var = nn.Linear(1, self.codec_dim)
 
         # Decoder
         self.decoder_expand = nn.Sequential(
-            nn.Linear(self.codec_dim, 100, bias=False),
+            nn.Linear(self.codec_dim, 100),
             nn.LeakyReLU(),
             nn.Linear(100, 100),
             nn.Linear(100, self.d_model * self.num_features)
         )
-
-    def reparameterize(self, mu, log_var):
-        std = torch.exp(0.5 * log_var)
-        eps = torch.randn_like(std)
-        return mu + eps * std
 
     def forward(self, x_num, x_cat):
         batch_size = x_num.size(0)
@@ -90,22 +82,18 @@ class TabularBERT(nn.Module):
         # Encoding
         encoded = self.encoder(combined_embd)
 
-        # VAE bottleneck
+        # bottleneck
         flattened = encoded.view(batch_size, -1)
-        shared = self.bottleneck_shared(flattened)
-        norms = torch.norm(shared, p=2, keepdim=True, dim=-1)
-        mu = self.fc_mu(norms)
-        log_var = self.fc_log_var(norms)
-        codec = self.reparameterize(mu, log_var) + self.bottleneck(shared)
+        codec = self.bottleneck(flattened)
 
         # Decoding
         expanded = self.decoder_expand(codec)
         decoded_features = expanded.view(batch_size, self.num_features, self.d_model)
 
-        return codec, decoded_features, mu, log_var
+        return codec, decoded_features
 
     def loss(self, outputs, targets, mask, epoch):
-        codecs, decoded, mu, log_var = outputs
+        codecs, decoded = outputs
         x_num, x_cat = targets
 
         # Reconstruction loss
@@ -117,25 +105,16 @@ class TabularBERT(nn.Module):
         cmb_emb = torch.cat([num_emb, cat_emb], dim=1)
         rec_loss = torch.mean((decoded - cmb_emb)**2)
 
-        # KL divergence loss
-        kl_loss = -0.5 * torch.sum(1 + log_var - mu.pow(2) - log_var.exp(), dim=1).mean()
-
-        # Spherical loss components
-        w1 = self.smooth_growth(epoch, 0, 50, low_val=1e-5, high_val=0.1)
-        w2 = self.smooth_growth(epoch, 40, 100, low_val=1e-5, high_val=0.01)
-        w3 = self.smooth_growth(epoch, 100, 150, low_val=1e-5, high_val=0.01)
-        sph_ent, sph_rmu, sph_rep, sph_metrics = self.sph_loss_fn(codecs)
+        sph_rad, sph_uni = hypersphere_autoencoder_loss(codecs)
 
         # Total loss
-        total_loss = rec_loss + sph_rmu + sph_rep + w2 * sph_ent + w1 * kl_loss
+        total_loss = rec_loss + sph_rad + sph_uni
 
         return total_loss, {
             'loss': total_loss.item(),
             'mse_loss': rec_loss.item(),
-            'kld_loss': kl_loss.item(),
-            'sph_ent': sph_metrics['sph_ent'].item(),
-            'sph_rep': sph_metrics['sph_rep'].item(),
-            'sph_rad': sph_metrics['sph_rad'].item(),
+            'sph_uni': sph_uni.item(),
+            'sph_rad': sph_rad.item(),
         }
 
 # import math

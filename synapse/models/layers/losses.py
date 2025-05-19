@@ -62,43 +62,91 @@ class LogBessel(nn.Module):
         nu_tensor = torch.tensor(self.nu, dtype=dtype, device=device)
         return torch.log(bessel_iv(nu_tensor, kappa_safe) + self.eps)
 
-
-def spherical_knn_entropy(x: torch.Tensor, k: int, eps: float = 1e-6) -> torch.Tensor:
+def hypersphere_uniformity_loss(x: torch.Tensor) -> torch.Tensor:
     """
-    Estimate entropy of points on a unit hypersphere using Kozachenko–Leonenko (KL) method.
+    Encourages uniform distribution on a hypersphere *without* penalizing antipodal points.
+    Minimizing this pushes points away from their nearest neighbors (not just orthogonal).
+    """
+    x = F.normalize(x, p=2, dim=-1)  # Work on unit sphere
+    cos_sim = x @ x.T  # [N, N] cosine similarities
+
+    # Mask out self-similarities and avoid numerical instability
+    mask = ~torch.eye(len(x), dtype=torch.bool, device=x.device)
+    cos_sim = cos_sim.clamp(-1 + 1e-6, 1 - 1e-6)
+
+    # Penalize *only* nearby points (cos_sim close to 1 or -1)
+    # Using log(1 - cos_sim^2) to treat antipodal points equivalently
+    uniformity_loss = -torch.log(1.0 - cos_sim[mask].pow(2) + 1e-6).mean()
+    return uniformity_loss
+
+def hypersphere_autoencoder_loss(x: torch.Tensor, alpha: float = 0.1) -> torch.Tensor:
+    """
+    Loss for learning a stable, uniform hypersphere without explicit normalization.
+    Properties:
+    - Lets the network learn the natural radius.
+    - Prevents collapse/expansion via repulsion and radius stability.
+    - Encourages uniformity via angular dispersion.
+
+    Args:
+        x: Latent vectors (N, D), unnormalized.
+        alpha: Weight for uniformity term (default: 0.1).
+    Returns:
+        Scalar loss (minimize this).
+    """
+    norms = x.norm(p=2, dim=-1)  # [N]
+
+    # 1. Radius stability term (prevents collapse/expansion)
+    # Encourages stable but non-zero radius (log avoids hard constraints)
+    radius_loss = torch.log1p((norms - norms.mean()).abs()).mean()
+
+    # 2. Uniformity term (encourages points to spread out angularly)
+    # Works on *normalized* vectors (angular part only)
+    x_normalized = F.normalize(x, p=2, dim=-1)
+    uniformity_loss = hypersphere_uniformity_loss(x_normalized)
+
+    return radius_loss, uniformity_loss
+
+
+def spherical_knn_entropy(x: torch.Tensor, k: int = 1, eps: float = 1e-8) -> torch.Tensor:
+    """
+    Estimates the negative entropy of points on a unit hypersphere using kNN distances.
+    Minimizing this value will encourage uniform distribution of points.
+
+    Based on Kozachenko-Leonenko entropy estimator adapted for spherical geometry.
 
     Args:
         x (Tensor): Normalized data points of shape (N, D), assumed to lie on a unit hypersphere.
         k (int): Number of nearest neighbors to consider (default = 1).
-        eps (float): Small constant to avoid log(0).
+        eps (float): Small constant to avoid numerical issues.
 
     Returns:
-        Tensor: Estimated differential entropy (scalar).
+        Tensor: Scalar value proportional to negative entropy (minimize this for uniform distribution).
     """
     N, D = x.shape
     device = x.device
 
-    # Compute cosine similarity
+    # Compute pairwise angular distances (more stable than chord distance for small angles)
     cos_sim = x @ x.T
-    cos_sim = cos_sim.clamp(-1 + eps, 1 - eps)
+    cos_sim = cos_sim.clamp(-1 + eps, 1 - eps)  # Ensure numerical stability
+    angles = torch.acos(cos_sim)  # [N, N] matrix of angles
 
-    # Convert to squared chord distance on sphere
-    chord_sq = 2 - 2 * cos_sim
+    # Mask self-distances
+    angles.fill_diagonal_(float('inf'))
 
-    # Mask diagonal by setting to large value without in-place op
-    mask = torch.eye(N, device=device, dtype=torch.bool)
-    chord_sq_masked = chord_sq.masked_fill(mask, float('inf'))
+    # Get k-th smallest angle for each point
+    knn_dists, _ = torch.topk(angles, k=k, dim=1, largest=False)
+    eps_i = knn_dists[:, -1]  # [N] vector of k-th NN distances
 
-    # Find k-th nearest neighbor distance
-    knn_dists, _ = torch.topk(chord_sq_masked, k=k, dim=1, largest=False)
-    eps_i = knn_dists[:, -1] + eps
+    # Spherical entropy estimator (negative because we typically want to minimize loss)
+    # The constant terms don't affect optimization but are included for completeness
+    sphere_surface_area = (D * torch.pi**(D/2)) / torch.tensor(math.gamma(D/2 + 1))
+    entropy = torch.log(eps_i).mean() + torch.log(sphere_surface_area * (N-1))
 
-    # Entropy estimate
-    entropy = ((D - 1) * torch.log(eps_i)).mean()
-    return entropy
+    # Return negative entropy (so minimization encourages uniformity)
+    return -entropy
 
 
-class VMFLoss(nn.Module):
+class EntropyLoss(nn.Module):
     def __init__(self, dim, learn_mu=True, learn_kappa=True,
                  repulsion_weight=0.5, radius_reg_weight=0.5):
         super().__init__()

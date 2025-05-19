@@ -162,8 +162,6 @@ class SnapshotGenerator:
         ax.set_yscale('log')
         loss_components = {
             'MSE': metrics['mse_loss'],
-            'Ent': metrics['sph_ent'],
-            'KLD': metrics['kld_loss'],
             'Rad': metrics['sph_rad'],
             'Rep': metrics['sph_rep'],
         }
@@ -178,8 +176,6 @@ class SnapshotGenerator:
         epochs = list(range(len(history)))
         plt.plot(epochs, [h['loss'] for h in history], label='loss')
         plt.plot(epochs, [h['mse_loss'] for h in history], label='MSE')
-        plt.plot(epochs, [h['kld_loss'] for h in history], label='KLD')
-        plt.plot(epochs, [h['sph_ent'] for h in history], label='entropy')
         plt.plot(epochs, [h['sph_rad'] for h in history], label='radial')
         plt.plot(epochs, [h['sph_rep'] for h in history], label='repulsion')
         plt.title('Training Progress')
