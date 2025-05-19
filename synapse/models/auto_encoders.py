@@ -93,7 +93,7 @@ class TabularBERT(nn.Module):
         # VAE bottleneck
         flattened = encoded.view(batch_size, -1)
         shared = self.bottleneck_shared(flattened)
-        norms_shared = torch.norm(shared, p=2, dim=-1)
+        norms_shared = torch.norm(shared, p=2, dim=-1, keepdim=True)
         mu = self.fc_mu(norms_shared)
         log_var = self.fc_log_var(norms_shared)
         compressed = self.reparameterize(mu, log_var)
