@@ -105,13 +105,11 @@ class VMFLoss(nn.Module):
         radius_reg = torch.mean((norms - norms.detach().mean()) ** 2)
 
         batch_size = x.size(0)
-        if batch_size > 1:
-            cos_sim = torch.matmul(x_normalized, x_normalized.T)
-            mask = ~torch.eye(batch_size, dtype=torch.bool, device=x.device)
-            cos_vals = cos_sim[mask]
-            repulsion = torch.mean(F.relu(cos_vals) ** 2)
-        else:
-            repulsion = torch.tensor(0.0, device=x.device)
+        x_norm_d = x / norms.detach()
+        cos_sim = x_norm_d @ x_norm_d.T
+        mask = ~torch.eye(batch_size, dtype=torch.bool, device=x.device)
+        cos_vals = cos_sim[mask]
+        repulsion = torch.mean(F.relu(cos_vals) ** 2)
 
         total_loss = vmf + self.radius_reg_weight * radius_reg + self.repulsion_weight * repulsion
 
