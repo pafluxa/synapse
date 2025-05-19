@@ -13,7 +13,7 @@ def hypersphere_autoencoder_loss(x: torch.Tensor,
     - Radius control via soft constraints
     - Normalized loss scales
     """
-    norms = x.norm(p=2, dim=-1)
+    norms = x.norm(p=2, dim=-1, keepdim=True)
     # 1. Radius control (softly encourages target radius)
     radius_loss = torch.log1p((norms - target_radius).abs()).mean()
 
