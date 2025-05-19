@@ -114,16 +114,15 @@ class VMFLoss(nn.Module):
 
         # Radius regularization: encourage all vectors to lie on the same-radius sphere
         norms = x.norm(p=2, dim=-1)
-        radius_reg = torch.mean((norms - norms.detach().mean()) ** 2)
+        radius_reg = torch.mean((norms - norms.clone().detach().mean()) ** 2)
 
         # Repulsion loss: discourage vector collapse (maximize spread)
-        similarity_matrix = F.cosine_similarity(
-            x_normalized.unsqueeze(1),
-            x_normalized.unsqueeze(0),
+        cos_sim = torch.matmul(
+            x_normalized, x_normalized.T,
             dim=-1
         )
-        identity = torch.eye(x.size(0), device=x.device)
-        repulsion = ((similarity_matrix - identity) ** 2).mean()
+        mask = ~torch.eye(x.size(0), dtype=torch.bool, device=x.device)
+        repulsion = torch.mean(cos_sim[mask] ** 2)
 
         # Total loss
         vmf = nll.mean()
