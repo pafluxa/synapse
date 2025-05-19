@@ -84,6 +84,7 @@ class TabularBERT(nn.Module):
         # bottleneck
         flattened = encoded.view(batch_size, -1)
         codec = self.bottleneck(flattened)
+        codec += 0.02 * torch.randn_like(codec)
 
         # Decoding
         expanded = self.decoder_expand(codec)
