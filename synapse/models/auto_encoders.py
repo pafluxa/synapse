@@ -97,7 +97,7 @@ class TabularBERT(nn.Module):
 
         # Adaptive weighting
         w_rad = 0.5 * (1 + torch.sigmoid(torch.tensor((epoch - 20)/10)))  # Smooth ramp
-        w_uni = 0.1 * (1 - torch.exp(-epoch/50))  # Slow increase
+        w_uni = 0.1 * (1 - torch.exp(-torch.tensor(epoch/50.0)))  # Slow increase
 
         # 3. Stabilized losses
         sph_rad, sph_uni = hypersphere_autoencoder_loss(
