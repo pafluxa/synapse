@@ -126,6 +126,7 @@ class VMFLoss(nn.Module):
         x_unit = x / norms.detach()
         diff = x_unit.unsqueeze(1) - x_unit.unsqueeze(0)
         dist_sq = (diff ** 2).sum(-1) + 1e-6
+        batch_size = x.size(0)
         mask = ~torch.eye(batch_size, dtype=torch.bool, device=x.device)
         inv_dist = 1.0 / (dist_sq[mask] + 1e-6)
         repulsion = F.sigmoid(self.repulsion_strength) * (inv_dist.mean())
