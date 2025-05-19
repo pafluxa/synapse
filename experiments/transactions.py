@@ -23,13 +23,13 @@ class RunConfiguration:
         self.embedding_dim = 32
 
         # Transformer configuration
-        self.num_heads= 8
-        self.num_layers = 8
+        self.num_heads= 4
+        self.num_layers = 4
         self.dim_feedforward = 1024
         self.dropout = 0.15
 
         # Bottleneck configuration
-        self.codec_dim = 3
+        self.codec_dim = 10
 
         # Training configuration
         self.num_workers = 4
