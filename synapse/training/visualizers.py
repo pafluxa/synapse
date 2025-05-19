@@ -102,8 +102,8 @@ class SnapshotGenerator:
 
         points = codecs  # np.dot(codecs, proj)
         norms = np.vecdot(points, points)
-        print(norms.shape)
         norms = norms.ravel()
+        avg_norm = np.average(norms)
 
         plt.figure(figsize=(18, 12))
 
@@ -114,7 +114,7 @@ class SnapshotGenerator:
                  f'Mean: {norms.mean():.4f}, Var: {norms.var():.6f}')
         plt.xlabel('Norm (normalized to max)')
         plt.ylabel('Frequency')
-        plt.xlim(0.0, 2.0)
+        plt.xlim(0.0, 10.0)
         plt.ylim(0, points.shape[0]//5)
         # plt.yscale('log')
         plt.legend()
@@ -127,21 +127,21 @@ class SnapshotGenerator:
             ax.set_aspect('equal')
             ax.scatter(points[:, 0], points[:, 1], points[:, 2], alpha=0.1, s=0.1)
 
-            r1 = 1.0
+            r1 = avg_norm
             u, v = np.mgrid[0:2*np.pi:20j, 0:np.pi:10j]
             x = r1 * np.cos(u)*np.sin(v)
             y = r1 * np.sin(u)*np.sin(v)
             z = r1 * np.cos(v)
             ax.plot_wireframe(x, y, z, color="r", alpha=0.1, label="reference")
 
-            r = 1.1
+            r = avg_norm * 1.05
             ax.quiver(-r, 0, 0, 2 * r, 0, 0, color='k', arrow_length_ratio=0.05) # x-axis
             ax.quiver(0, -r, 0, 0, 2 * r, 0, color='k', arrow_length_ratio=0.05) # y-axis
             ax.quiver(0, 0, -r, 0, 0, 2 * r, color='k', arrow_length_ratio=0.05) # z-axis
 
-            ax.set_xlim(-1.5, 1.5)
-            ax.set_ylim(-1.5, 1.5)
-            ax.set_zlim(-1.5, 1.5)
+            ax.set_xlim(-avg_norm * 1.5, avg_norm * 1.5)
+            ax.set_ylim(-avg_norm * 1.5, avg_norm * 1.5)
+            ax.set_zlim(-avg_norm * 1.5, avg_norm * 1.5)
 
             plt.title(f'First 3 Dimensions of Codecs\n(Total dim: {codecs.shape[1]})')
 
