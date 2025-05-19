@@ -94,10 +94,9 @@ class TabularBERT(nn.Module):
         flattened = encoded.view(batch_size, -1)
         shared = self.bottleneck_shared(flattened)
         norms = torch.norm(shared, p=2, keepdim=True, dim=-1)
-        print(shared.shape, norms.shape)
         mu = self.fc_mu(norms)
         log_var = self.fc_log_var(norms)
-        compressed = self.reparameterize(mu, log_var) + self.bottleneck(shared)
+        codec = self.reparameterize(mu, log_var) + self.bottleneck(shared)
 
         # Decoding
         expanded = self.decoder_expand(codec)
