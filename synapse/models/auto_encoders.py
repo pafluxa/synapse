@@ -94,7 +94,7 @@ class TabularBERT(nn.Module):
     def loss(self, outputs, targets, mask, epoch):
         codecs, decoded = outputs
         x_num, x_cat = targets
-
+        norms = torch.norm(codecs, p=2, dim=-1)
         # Reconstruction loss
         num_tok = self.num_tokenizer(x_num)
         num_emb = self.num_embedder(num_tok)
