@@ -28,7 +28,6 @@ class TabularBERT(nn.Module):
     def __init__(self, config):
         super().__init__()
 
-        self.sph_loss_fn = VMFLoss(config.codec_dim)
         self.d_model = config.embedding_dim
         self.nhead = config.num_heads
         self.num_layers = config.num_layers
