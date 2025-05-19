@@ -56,6 +56,8 @@ class TabularBERT(nn.Module):
             nn.LeakyReLU(),
             nn.Linear(100, 100),
         )
+        self.bottleneck = nn.Linear(100, self.codec_dim)
+
         self.fc_mu = nn.Linear(100, self.codec_dim)
         self.fc_log_var = nn.Linear(100, self.codec_dim)
 
@@ -91,12 +93,14 @@ class TabularBERT(nn.Module):
         # VAE bottleneck
         flattened = encoded.view(batch_size, -1)
         shared = self.bottleneck_shared(flattened)
-        mu = self.fc_mu(shared)
-        log_var = self.fc_log_var(shared)
+        norms_shared = torch.norm(shared, p=2, dim=-1)
+        mu = self.fc_mu(norms_shared)
+        log_var = self.fc_log_var(norms_shared)
         compressed = self.reparameterize(mu, log_var)
+        codec = compressed + self.bottleneck(shared)
 
         # Decoding
-        expanded = self.decoder_expand(compressed)
+        expanded = self.decoder_expand(codec)
         decoded_features = expanded.view(batch_size, self.num_features, self.d_model)
 
         return compressed, decoded_features, mu, log_var
