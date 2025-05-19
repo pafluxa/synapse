@@ -139,7 +139,7 @@ class VMFLoss(nn.Module):
         metrics = {
             'sph_vmf': h,
             'sph_rad': self.radius_reg_weight * radius_reg,
-            'sph_rep': self.repulsion_weight * repulsion
+            'sph_rep': self.repulsion_weight * 0.0 * radius_reg + 0.001
         }
 
         return total_loss, metrics
