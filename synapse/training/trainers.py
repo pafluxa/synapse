@@ -33,6 +33,7 @@ class MaskedEmbeddingTrainer:
         'sph_ent': 0.0,
         'sph_rad': 0.0,
         'sph_rep': 0.0,
+        'sph_uni': 0.0,
         # Timing metrics
         'data_load': 0.0,
         'forward_pass': 0.0,
@@ -116,6 +117,7 @@ class MaskedEmbeddingTrainer:
             'sph_rad': 0.0,
             'sph_rep': 0.0,
             'sph_ent': 0.0,
+            'sph_uni': 0.0,
             # Timing metrics
             'data_load': 0.0,
             'forward_pass': 0.0,
@@ -226,7 +228,7 @@ class MaskedEmbeddingTrainer:
             print(f"  loss: {train_metrics['loss']:.4f}")
             print(f"  MSE: {train_metrics['mse_loss']:.4f}")
             print(f"  Radial: {train_metrics['sph_rad']:.4f}")
-            print(f"  Repulsion: {train_metrics['sph_rep']:.4f}")
+            print(f"  Uniformity: {train_metrics['sph_uni']:.4f}")
             # val_metrics, v_codecs = self.evaluate_epoch(epoch)
             # self.val_history.append(val_metrics)
 
