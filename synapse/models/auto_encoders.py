@@ -73,7 +73,6 @@ class TabularBERT(nn.Module):
         # bottleneck
         flattened = encoded.view(batch_size, -1)
         codec = self.bottleneck(flattened)
-        codec += 0.02 * torch.randn_like(codec)
 
         # Decoding
         expanded = self.decoder_expand(codec)
@@ -96,8 +95,8 @@ class TabularBERT(nn.Module):
         rec_loss = torch.mean((decoded - cmb_emb)**2)
 
         # Adaptive weighting
-        w_rad = 0.5 * (1 + torch.sigmoid(torch.tensor((epoch - 20)/10)))  # Smooth ramp
-        w_uni = 0.1 * (1 - torch.exp(-torch.tensor(epoch/50.0)))  # Slow increase
+        w_rad = (1 + torch.sigmoid(torch.tensor((epoch - 20)/10)))  # Smooth ramp
+        w_uni = (1 - torch.exp(-torch.tensor(epoch/50.0)))  # Slow increase
 
         # 3. Stabilized losses
         sph_rad, sph_uni = hypersphere_autoencoder_loss(
