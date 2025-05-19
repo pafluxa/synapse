@@ -39,6 +39,7 @@ class BesselIVFunction(Function):
 
         return grad_output * grad_v, grad_output * grad_x
 
+
 def bessel_iv(v: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
     v_cpu = v.detach().to('cpu')
     x_cpu = x.detach().to('cpu')
@@ -46,6 +47,7 @@ def bessel_iv(v: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
         v_cpu = v_cpu.expand_as(x_cpu)
     result_cpu = BesselIVFunction.apply(v_cpu, x_cpu)
     return result_cpu.to(x.device)
+
 
 class LogBessel(nn.Module):
     def __init__(self, dim: int, eps=1e-10):
@@ -60,6 +62,7 @@ class LogBessel(nn.Module):
         nu_tensor = torch.tensor(self.nu, dtype=dtype, device=device)
         return torch.log(bessel_iv(nu_tensor, kappa_safe) + self.eps)
 
+
 class VMFLoss(nn.Module):
     def __init__(self, dim, learn_mu=True, learn_kappa=True,
                  repulsion_weight=0.2, radius_reg_weight=0.8):
@@ -68,28 +71,28 @@ class VMFLoss(nn.Module):
         self.repulsion_weight = repulsion_weight
         self.radius_reg_weight = radius_reg_weight
 
-        self.mu = nn.Parameter(torch.randn(dim)) if learn_mu else self.register_buffer('mu', torch.ones(dim))
+        self.mu = nn.Parameter(torch.randn(dim)) if learn_mu else self.register_buffer('mu', torch.randn(dim))
         self.kappa = nn.Parameter(torch.tensor(1.0)) if learn_kappa else self.register_buffer('kappa', torch.tensor(1.0))
 
         self.log_bessel_fn = LogBessel(dim=dim)
-        self.repulsion_strength = nn.Parameter(torch.tensor(1.0))
+        self.repulsion_strength = nn.Parameter(torch.tensor(0.01))
 
     def forward(self, x: torch.Tensor):
         x_norm = F.normalize(x, dim=-1)
         mu = F.normalize(self.mu, p=2, dim=-1)
         kappa = torch.clamp(self.kappa, min=1e-3)
 
-        # vMF entropy
-        nu = self.dim / 2 - 1
-        log_C = ((nu * torch.log(kappa))
-                 - (self.dim / 2) * torch.log(2 * torch_pi)
-                 - self.log_bessel_fn(kappa))
+        # vMF negative log-likelihood
+        # log_C = ((self.dim/2 - 1) * torch.log(kappa)
+        #          - (self.dim/2) * torch.log(2 * torch_pi)
+        #          - self.log_bessel_fn(kappa))
+        # dot = torch.sum(mu * x_norm, dim=-1)
+        # nll = -(log_C + kappa * dot)
+        # vmf = nll.mean()
 
-        ratio = bessel_iv(torch.tensor(nu + 1, device=kappa.device, dtype=kappa.dtype), kappa) \
-                / (bessel_iv(torch.tensor(nu, device=kappa.device, dtype=kappa.dtype), kappa) + 1e-10)
-
-        entropy = kappa * ratio - log_C
-        neg_entropy = entropy.mean()
+        # Anti-alignment objective (dot product with mu)
+        dot = torch.sum(mu * x_norm, dim=-1)  # shape: (batch,)
+        vmf = (kappa * dot).mean()            # minimize this to penalize alignment
 
         # Radius regularization
         norms = x.norm(p=2, dim=-1)
@@ -103,15 +106,15 @@ class VMFLoss(nn.Module):
             diff = x_unit.unsqueeze(1) - x_unit.unsqueeze(0)
             dist_sq = (diff ** 2).sum(-1) + 1e-6
             mask = ~torch.eye(batch_size, dtype=torch.bool, device=x.device)
-            inv_dist = 1.0 / dist_sq[mask]
+            inv_dist = 1.0 / (dist_sq[mask] + 1e-6)
             repulsion = self.repulsion_strength * inv_dist.mean()
         else:
             repulsion = torch.tensor(0.0, device=x.device)
 
-        total_loss = neg_entropy + self.radius_reg_weight * radius_reg + self.repulsion_weight * repulsion
+        total_loss = (repulsion - vmf) + self.radius_reg_weight * radius_reg
 
         metrics = {
-            'sph_vmf': neg_entropy,
+            'sph_vmf': vmf,
             'sph_rad': self.radius_reg_weight * radius_reg,
             'sph_rep': self.repulsion_weight * repulsion
         }
