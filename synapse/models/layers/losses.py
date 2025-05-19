@@ -30,13 +30,13 @@ def hypersphere_autoencoder_loss(x: torch.Tensor,
 
     # Stabilized 1/r² with soft clipping and damping
     eps = 1e-8
-    min_dist = 0.5
-    max_dist = 2.0
+    min_dist = 0.1
+    max_dist = 10.0
     dist_ratio = (valid_dists / min_dist).clamp_min(1.0)
     repulsion = torch.where(
         valid_dists <= max_dist,
         torch.log(1.0 + 1.0 / (dist_ratio.pow(2) + eps)),  # Damped repulsion
-        0.0  # No repulsion beyond max_dist
+        0.01  # No repulsion beyond max_dist
     ).mean()
 
     return alpha * radius_loss, beta * repulsion
