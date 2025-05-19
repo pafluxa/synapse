@@ -14,17 +14,6 @@ from synapse.models.layers.losses import hypersphere_autoencoder_loss
 
 class TabularBERT(nn.Module):
 
-    @staticmethod
-    def smooth_growth(n, start, end, low_val=1e-5, high_val=1e-0):
-        if n < start:
-            return low_val
-        elif n > end:
-            return high_val
-        else:
-            x = (n - start) / (end - start)
-            factor = math.log10(high_val / low_val)
-            return low_val * (10 ** (factor * x))
-
     def __init__(self, config):
         super().__init__()
 
@@ -107,10 +96,16 @@ class TabularBERT(nn.Module):
         rec_loss = torch.mean((decoded - cmb_emb)**2)
 
         # Adaptive weighting
-        w_rad = self.smooth_growth(epoch, 0, 50, 0.1, 1.0)  # Gradually increase
-        w_uni = self.smooth_growth(epoch, 0, 100, 0.01, 0.5)
+        w_rad = 0.5 * (1 + torch.sigmoid(torch.tensor((epoch - 20)/10)))  # Smooth ramp
+        w_uni = 0.1 * (1 - torch.exp(-epoch/50))  # Slow increase
 
-        sph_rad, sph_uni = hypersphere_autoencoder_loss(codecs)
+        # 3. Stabilized losses
+        sph_rad, sph_uni = hypersphere_autoencoder_loss(
+            codecs,
+            alpha=w_rad,
+            beta=w_uni,
+            target_radius=1.0  # Can be made learnable
+        )
 
         total_loss = rec_loss + w_rad * sph_rad + w_uni * sph_uni
 

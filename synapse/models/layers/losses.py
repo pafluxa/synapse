@@ -3,7 +3,40 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 
-def hypersphere_autoencoder_loss(x: torch.Tensor, alpha: float = 1.0, beta: float = 1.0):
+def hypersphere_autoencoder_loss(x: torch.Tensor,
+                               alpha: float = 0.1,
+                               beta: float = 0.05,
+                               target_radius: float = 1.0):
+    """
+    Numerically stable version with:
+    - Clipped uniformity gradients
+    - Radius control via soft constraints
+    - Normalized loss scales
+    """
+    norms = x.norm(p=2, dim=-1)
+
+    # 1. Radius control (softly encourages target radius)
+    radius_loss = torch.log1p((norms - target_radius).abs()).mean()
+
+    # 2. Normalized directions (stop gradient for norm)
+    with torch.no_grad():
+        x_normed = F.normalize(x, p=2, dim=-1)
+
+    # 3. Stability-controlled uniformity
+    cos_sim = x_normed @ x_normed.T
+    cos_sim = cos_sim.clamp(-0.999, 0.999)  # Avoid +-1 extremes
+
+    # Mask out self-similarities
+    mask = ~torch.eye(len(x), dtype=torch.bool, device=x.device)
+    pairwise_sims = cos_sim[mask]
+
+    # Clipped exponential uniformity (gradient-scaled)
+    uniformity = torch.exp(2 * pairwise_sims.abs()) - 1  # [0, e^2-1] range
+    uniformity_loss = torch.log1p(uniformity.mean())  # Compressed to [0, ~1.5]
+
+    return alpha * radius_loss, beta * uniformity_loss
+
+def hypersphere_autoencoder_loss_2(x: torch.Tensor, alpha: float = 1.0, beta: float = 1.0):
     """
     Improved version with:
     - Stable radius control via sigmoid activation
