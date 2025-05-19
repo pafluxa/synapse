@@ -16,7 +16,7 @@ def hypersphere_autoencoder_loss(x: torch.Tensor,
     norms = x.norm(p=2, dim=-1, keepdim=True)
     norms_no_grad = norms.clone().detach()
     # 1. Radius control (softly encourages target radius)
-    radius_loss = ((norms - norms_no_grad) ** 2).mean()
+    radius_loss = ((norms - norms_no_grad.mean()) ** 2).mean()
 
     # 2. Normalized directions (stop gradient for norm)
     x_normed = x / (norms_no_grad + 1e-7)
