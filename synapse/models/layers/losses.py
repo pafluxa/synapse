@@ -14,13 +14,12 @@ def hypersphere_autoencoder_loss(x: torch.Tensor,
     - Normalized loss scales
     """
     norms = x.norm(p=2, dim=-1)
-
     # 1. Radius control (softly encourages target radius)
     radius_loss = torch.log1p((norms - target_radius).abs()).mean()
 
     # 2. Normalized directions (stop gradient for norm)
-    with torch.no_grad():
-        x_normed = F.normalize(x, p=2, dim=-1)
+    norms_no_grad = norms.clone().detach()
+    x_normed = x / (norms_no_grad + 1e-7)
 
     # 3. Stability-controlled uniformity
     cos_sim = x_normed @ x_normed.T
