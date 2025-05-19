@@ -23,19 +23,19 @@ class RunConfiguration:
         self.embedding_dim = 64
 
         # Transformer configuration
-        self.num_heads= 4
+        self.num_heads= 8
         self.num_layers = 4
         self.dim_feedforward = 1024
-        self.dropout = 0.1
+        self.dropout = 0.15
 
         # Bottleneck configuration
-        self.codec_dim = 32
+        self.codec_dim = 8
 
         # Training configuration
         self.num_workers = 4
         self.batch_size = 512
         self.num_epochs = 1000
-        self.learning_rate = 1e-4
+        self.learning_rate = 1e-5
         self.weight_decay = 1e-9
         self.mask_prob = 0.25
         self.viz_dir = "./viz"

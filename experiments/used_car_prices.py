@@ -3,15 +3,16 @@ import multiprocessing as mp
 from synapse.data.datasets import CSVDataset
 from synapse.training.trainers import MaskedEmbeddingTrainer
 
+
 # Extended config
 class RunConfiguration:
     """Configuration class for the model and training"""
-    def __init__(self, train_ds: CSVDataset): #, test_ds: CSVDataset, val_ds: CSVDataset):
+    def __init__(self, train_ds: CSVDataset, test_ds: CSVDataset, val_ds: CSVDataset):
 
         # Data configuration
         self.training_dataset = train_ds
-        # self.testing_dataset = test_ds
-        # self.validation_dataset = val_ds
+        self.testing_dataset = test_ds
+        self.validation_dataset = val_ds
 
         self.num_numerical = len(train_ds.numerical_cols)
         self.categorical_dims = [c for c in train_ds.cardinalities]
@@ -20,17 +21,17 @@ class RunConfiguration:
         self.num_samples = len(train_ds)
 
         # Embedding configuration
-        self.embedding_dim = 64
+        self.embedding_dim = 32
 
         # Transformer configuration
         self.num_heads= 4
-        self.num_layers = 3
-        self.dim_feedforward = 512
-        self.dropout = 0.1
+        self.num_layers = 4
+        self.dim_feedforward = 1024
+        self.dropout = 0.15
         self.mask_ratio = 0.04
 
         # Encoder configuration
-        self.codec_dim = 8
+        self.codec_dim = 3
         self.width_mul = 1.0
         self.depth_mul = 1.0
 
@@ -42,7 +43,7 @@ class RunConfiguration:
 
         # Training configuration
         self.num_workers = 4
-        self.batch_size = 256
+        self.batch_size = 128
         self.num_epochs = 1000
         self.learning_rate = 1e-4
         self.weight_decay = 1e-10
@@ -97,6 +98,6 @@ if __name__ == '__main__':
         val_size=0.1
     )
 
-    config = RunConfiguration(train_set)
+    config = RunConfiguration(train_set, val_set, test_set)
     trainer = MaskedEmbeddingTrainer(config)
     trainer.train()
