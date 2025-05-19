@@ -100,7 +100,7 @@ def spherical_knn_entropy(x: torch.Tensor, k: int, eps: float = 1e-6) -> torch.T
 
 class VMFLoss(nn.Module):
     def __init__(self, dim, learn_mu=True, learn_kappa=True,
-                 repulsion_weight=0.2, radius_reg_weight=0.8):
+                 repulsion_weight=0.5, radius_reg_weight=0.5):
         super().__init__()
         self.dim = dim
         self.repulsion_weight = repulsion_weight
@@ -128,15 +128,15 @@ class VMFLoss(nn.Module):
         dist_sq = (diff ** 2).sum(-1) + 1e-6
         batch_size = x.size(0)
         mask = ~torch.eye(batch_size, dtype=torch.bool, device=x.device)
-        # inv_dist = 1.0 / (dist_sq[mask] + 1e-6)
-        repulsion = torch.mean(torch.exp(-dist_sq[mask])) #F.sigmoid(self.repulsion_strength) * (inv_dist.mean())
+        inv_dist = 1.0 / (dist_sq[mask] + 1e-6)
+        repulsion = F.sigmoid(self.repulsion_strength * (inv_dist).mean())
 
-        total_loss = h + radius_reg + self.repulsion_weight * repulsion
+        total_loss = h + self.radius_reg_weight * radius_reg + self.repulsion_weight * repulsion
 
         metrics = {
             'sph_vmf': h,
-            'sph_rad': radius_reg,
-            'sph_rep': self.repulsion_weight * repulsion
+            'sph_rad': self.radius_reg_weight * radius_reg,
+            'sph_rep': self.repulsion_strength
         }
 
         return total_loss, metrics
