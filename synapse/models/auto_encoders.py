@@ -102,18 +102,23 @@ class TabularBERT(nn.Module):
         cat_emb = self.cat_embedder(x_cat)
         cat_emb = rearrange(cat_emb, 's b e -> b s e')
         cmb_emb = torch.cat([num_emb, cat_emb], dim=1)
+
         rec_loss = torch.mean((decoded - cmb_emb)**2)
+
+        # Adaptive weighting
+        w_rad = self.smooth_growth(epoch, 0, 50, 0.1, 1.0)  # Gradually increase
+        w_uni = self.smooth_growth(epoch, 0, 100, 0.01, 0.5)
 
         sph_rad, sph_uni = hypersphere_autoencoder_loss(codecs)
 
-        # Total loss
-        total_loss = rec_loss + sph_rad + sph_uni
+        total_loss = rec_loss + w_rad * sph_rad + w_uni * sph_uni
 
         return total_loss, {
             'loss': total_loss.item(),
             'mse_loss': rec_loss.item(),
-            'sph_uni': sph_uni.item(),
-            'sph_rad': sph_rad.item(),
+            'sph_uni': (w_uni * sph_uni).item(),
+            'sph_rad': (w_rad * sph_rad).item(),
+            'mean_norm': norms.mean().item()  # Monitor this!
         }
 
 # import math

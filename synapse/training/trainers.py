@@ -34,6 +34,7 @@ class MaskedEmbeddingTrainer:
         'sph_rad': 0.0,
         'sph_rep': 0.0,
         'sph_uni': 0.0,
+        'mean_norm': 0.0,
         # Timing metrics
         'data_load': 0.0,
         'forward_pass': 0.0,
@@ -118,6 +119,7 @@ class MaskedEmbeddingTrainer:
             'sph_rep': 0.0,
             'sph_ent': 0.0,
             'sph_uni': 0.0,
+            'mean_norm': 0.0,
             # Timing metrics
             'data_load': 0.0,
             'forward_pass': 0.0,

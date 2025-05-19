@@ -29,7 +29,7 @@ class RunConfiguration:
         self.dropout = 0.15
 
         # Bottleneck configuration
-        self.codec_dim = 8
+        self.codec_dim = 3
 
         # Training configuration
         self.num_workers = 4

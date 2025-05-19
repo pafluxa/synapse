@@ -100,7 +100,7 @@ class SnapshotGenerator:
     ):
         """Generate visualization plots for the current epoch"""
 
-        points = np.dot(codecs, proj)
+        points = codecs  # np.dot(codecs, proj)
         norms = np.linalg.norm(points, axis=1)
 
         plt.figure(figsize=(18, 12))
@@ -164,6 +164,7 @@ class SnapshotGenerator:
             'MSE': metrics['mse_loss'],
             'Radial': metrics['sph_rad'],
             'Uniformity': metrics['sph_uni'],
+            'Mean norm': metrics['mean_norm']
         }
         plt.bar(loss_components.keys(), loss_components.values(), color=['blue', 'red', 'green'])
         plt.title('Loss Components Breakdown')
@@ -178,6 +179,7 @@ class SnapshotGenerator:
         plt.plot(epochs, [h['mse_loss'] for h in history], label='MSE')
         plt.plot(epochs, [h['sph_rad'] for h in history], label='radial')
         plt.plot(epochs, [h['sph_uni'] for h in history], label='repulsion')
+        plt.plot(epochs, [h['mean_norm'] for h in history], label='avg. norm')
         plt.title('Training Progress')
         plt.xlabel('Epoch')
         plt.legend()
