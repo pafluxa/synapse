@@ -7,7 +7,7 @@ import math
 
 
 class LogBesselApprox(nn.Module):
-    def __init__(self, dim, eps=1e-10, threshold_low=1.0, threshold_high=10.0):
+    def __init__(self, dim: int, eps=1e-10, threshold_low=1.0, threshold_high=10.0):
         super().__init__()
         self.dim = dim
         self.nu = dim / 2 - 1
@@ -17,7 +17,10 @@ class LogBesselApprox(nn.Module):
         self.gamma_nu = math.lgamma(self.nu + 1)
 
     @staticmethod
-    def log_bessel_approx(kappa, v, threshold_low=1.0, threshold_high=10.0, eps=1e-8):
+    def log_bessel_approx(kappa: torch.Tensor, v: int,
+        threshold_low: float = 1.0,
+        threshold_high: float = 10.0,
+        eps: float = 1e-8):
         """
         Differentiable approximation of log(I_v(kappa)) for any v.
         """
@@ -41,7 +44,7 @@ class LogBesselApprox(nn.Module):
 
         return log_iv
 
-    def forward(self, kappa):
+    def forward(self, kappa: torch.Tensor) -> torch.Tensor:
         kappa_safe = kappa.clamp(min=self.eps)
         # iv = torch.special.iv(self.nu, kappa_safe)
         # log_iv = torch.log(iv + self.eps)
@@ -61,7 +64,6 @@ class VMFLoss(nn.Module):
     def __init__(self, dim,
             learn_mu=True,
             learn_kappa=True,
-            learn_radius=False,
             repulsion_weight=0.1,
             radius_reg_weight=1.0):
         super().__init__()
@@ -81,15 +83,9 @@ class VMFLoss(nn.Module):
         else:
             self.register_buffer("kappa", torch.tensor(1.0))
 
-        # Learnable radius of the hypersphere
-        if learn_radius:
-            self.radius = nn.Parameter(torch.tensor(1.0))
-        else:
-            self.register_buffer("radius", torch.tensor(1.0))
+        self.log_bessel_fn = LogBesselApprox(dim=dim)
 
-        self.log_bessel = LogBesselApprox(dim=dim)
-
-    def forward(self, x):
+    def forward(self, x: torch.Tensor):
         """
         Args:
             x (Tensor): (batch, dim), unnormalized vectors
@@ -98,7 +94,6 @@ class VMFLoss(nn.Module):
         """
         # Normalize to unit sphere, then scale to learnable radius
         x_normalized = F.normalize(x, dim=-1)
-        x_projected = x_normalized * self.radius
 
         # μ normalized
         kappa = torch.clamp(self.kappa, min=1e-3)
@@ -111,10 +106,10 @@ class VMFLoss(nn.Module):
         )
 
         # Dot product κ μᵀx
-        dot_product = torch.sum(x_normalized, dim=-1)
+        dot_product = torch.sum(self.mu * x_normalized, dim=-1)
 
         # vMF negative log-likelihood
-        nll = - (log_C + kappa * dot_product)
+        nll = -(log_C + kappa * dot_product)
 
         # Radius regularization: encourage all vectors to lie on the same-radius sphere
         norms = x.norm(p=2, dim=-1)
