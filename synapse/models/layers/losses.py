@@ -116,7 +116,7 @@ class VMFLoss(nn.Module):
 
         # entropy estimation
         x_norm = F.normalize(x, p=2, dim=-1)
-        h = -spherical_knn_entropy(x_norm, k=32)
+        h = -spherical_knn_entropy(x_norm, k=3)
         # penalize norms away from average
         norms = x.norm(p=2, dim=-1)
         radius_reg = torch.mean((norms - norms.detach().mean())**2)
