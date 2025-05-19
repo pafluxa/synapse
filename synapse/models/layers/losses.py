@@ -111,16 +111,15 @@ class VMFLoss(nn.Module):
 
     def forward(self, x: torch.Tensor):
 
-        # entropy estimation
-        x_norm = F.normalize(x, p=2, dim=-1)
-        h = -spherical_knn_entropy(x_norm, k=8)
         # penalize norms away from average
-        norms = x.norm(p=2, dim=-1)
-        radius_reg = torch.mean((norms - norms.detach().mean())**2)
-
-        # adds electrostatic-style repulsion
+        norms2 = x.norm(p=2, dim=-1)
+        radius_reg = torch.mean((norms2 - norms2.detach().mean())**2)
+        # entropy estimation
         norms = x.norm(p=2, dim=-1, keepdim=True)
         x_unit = x / norms.detach()
+        h = -spherical_knn_entropy(x_unit, k=8)
+
+        # adds electrostatic-style repulsion
         diff = x_unit.unsqueeze(1) - x_unit.unsqueeze(0)
         dist_sq = (diff ** 2).sum(-1) + 1e-6
         batch_size = x.size(0)
