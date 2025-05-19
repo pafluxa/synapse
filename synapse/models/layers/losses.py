@@ -64,8 +64,8 @@ class VMFLoss(nn.Module):
     def __init__(self, dim,
             learn_mu=True,
             learn_kappa=True,
-            repulsion_weight=0.1,
-            radius_reg_weight=1.0):
+            repulsion_weight=0.2,
+            radius_reg_weight=0.8):
         super().__init__()
         self.dim = dim
         self.repulsion_weight = repulsion_weight

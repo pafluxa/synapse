@@ -119,14 +119,15 @@ class TabularBERT(nn.Module):
         rec_loss = torch.mean((decoded - cmb_emb)**2)
 
         # spherical loss
+        w_sph = self.smooth_growth(epoch, 1, 100, low_val=1e-5, high_val=1e-1)
         sph_loss, sph_metrics = self.sph_loss_fn(codecs)
 
-        total_loss = rec_loss + sph_loss
+        total_loss = rec_loss + w_sph * sph_loss
 
         return total_loss, {
             'loss': total_loss.item(),
             'mse_loss': rec_loss.item(),
-            'sph_vmf': sph_metrics['sph_vmf'].item(),
-            'sph_rep': sph_metrics['sph_rep'].item(),
-            'sph_rad': sph_metrics['sph_rad'].item(),
+            'sph_vmf': w_sph * sph_metrics['sph_vmf'].item(),
+            'sph_rep': w_sph * sph_metrics['sph_rep'].item(),
+            'sph_rad': w_sph * sph_metrics['sph_rad'].item(),
         }
