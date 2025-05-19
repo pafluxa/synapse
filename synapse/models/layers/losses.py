@@ -107,7 +107,7 @@ class VMFLoss(nn.Module):
         else:
             repulsion = torch.tensor(0.0, device=x.device)
 
-        total_loss = vmf + self.radius_reg_weight * radius_reg + self.repulsion_weight * repulsion
+        total_loss = radius_reg * (vmf - (self.repulsion_weight * repulsion))**2
 
         metrics = {
             'sph_vmf': vmf,
