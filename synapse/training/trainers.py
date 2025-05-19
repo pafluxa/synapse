@@ -50,7 +50,7 @@ class MaskedEmbeddingTrainer:
 
         self.model = TabularBERT(config).cuda()
 
-        self.optimizer = optim.Adam(
+        self.optimizer = optim.AdamW(
             self.model.parameters(),
             lr=config.learning_rate,
             weight_decay=config.weight_decay

@@ -35,8 +35,8 @@ class RunConfiguration:
         self.num_workers = 4
         self.batch_size = 1024
         self.num_epochs = 1000
-        self.learning_rate = 1e-5
-        self.weight_decay = 1e-10
+        self.learning_rate = 1e-4
+        self.weight_decay = 1e-9
         self.mask_prob = 0.25
         self.viz_dir = "./viz"
 
