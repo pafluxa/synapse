@@ -36,6 +36,7 @@ class CategoricalEmbedding(nn.Module):
 
     def __init__(
         self,
+        d_model: int,
         cardinalities: List[int],
         max_emb_dim: int = 0,
         min_emb_dim: int = 0,
@@ -60,13 +61,21 @@ class CategoricalEmbedding(nn.Module):
 
         assert self.min_emb_dim_ > 0, "Minimum embedding dimension must be positive"
 
-        self.embedding_layers_ = nn.ModuleList()
+        self.embeddings_ = nn.ModuleList()
         for c in cardinalities:
-            d = self.min_emb_dim_  #in_emb_dim_, int(math.ceil(c**0.5) + 1))
-            self.embedding_layers_.append(
+            d = int(math.ceil(c**0.5) + 1)
+            self.embeddings_.append(
                 nn.Sequential(
                     nn.Embedding(c, d),
-                    nn.LayerNorm(d),
+                )
+            )
+        self.projections_ = nn.ModuleList()
+        for c in cardinalities:
+            d = int(math.ceil(c**0.5) + 1)
+            self.projections_.append(
+                nn.Sequential(
+                    nn.Linear(d, d_model),
+                    nn.LayerNorm(d_model),
                 )
             )
 
@@ -82,15 +91,16 @@ class CategoricalEmbedding(nn.Module):
                 - Padding mask tensor with shape (batch_size, seq_len)
         """
         embeddings = []
-        for i, layer in enumerate(self.embedding_layers_):
-            emb = rearrange(layer(x[:, i]), 'b d -> d b')
-            embeddings.append(emb)
+        for i, (emb, proj) in enumerate(zip(self.embeddings_, self.projections_)):
+            x_emb = emb(x[:, i]) #, 'b d -> d b')
+            x_prj = proj(x_emb)
+            embeddings.append(x_prj)
 
-        padded_emb_tensor = pad_sequence(embeddings, padding_value=self.padval_)
-        padded_emb_tensor = rearrange(padded_emb_tensor, 'd s b -> b s d')
-        padding_mask = padded_emb_tensor == self.padval_
+        # padded_emb_tensor = pad_sequence(embeddings, padding_value=self.padval_)
+        # padded_emb_tensor = rearrange(padded_emb_tensor, 'd s b -> b s d')
+        # padding_mask = padded_emb_tensor == self.padval_
 
-        return padded_emb_tensor, padding_mask
+        return torch.stack(embeddings)
 
 
 class NumericalEmbedding(nn.Module):
@@ -111,6 +121,7 @@ class NumericalEmbedding(nn.Module):
 
     def __init__(
         self,
+        d_model: int,
         max_depths: List[int],
         max_emb_dim: int = -1,
         min_emb_dim: int = 1_000_000,
@@ -135,17 +146,28 @@ class NumericalEmbedding(nn.Module):
 
         assert self.min_emb_dim_ > 0, "Minimum embedding dimension must be positive"
 
+        # Embedding layer for values {0, 1}
+        self.embedding_layer = nn.Embedding(2, self.max_emb_dim_)
+
         self.embedding_layers_ = nn.ModuleList()
         for m in max_depths:
             d = int(math.ceil(m**0.5) + 1)
             self.embedding_layers_.append(
                 nn.Sequential(
-                    nn.Embedding(3, m),
-                    nn.LayerNorm(m),
+                    nn.Embedding(3, d),
+                )
+            )
+        self.projections_ = nn.ModuleList()
+        for m in max_depths:
+            d = int(math.ceil(m**0.5) + 1)
+            self.projections_.append(
+                nn.Sequential(
+                    nn.Linear(d, d_model),
+                    nn.LayerNorm(d_model),
                 )
             )
 
-    def forward(self, tokens: List[torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass through the embedding layer.
 
         Args:
@@ -157,13 +179,14 @@ class NumericalEmbedding(nn.Module):
                 - Padding mask tensor with shape (batch_size, seq_len)
         """
         embeddings = []
-        for i, layer in enumerate(self.embedding_layers_):
-            emb = layer(tokens[:, i])
-            embeddings.append(emb)
+        for i, (emb, proj) in enumerate(zip(self.embedding_layers_, self.projections_)):
+            xi = x[:, i, :]
+            mask = xi < 255
+            xi_clamped = torch.clamp(xi, max=1)
+            emb = emb(xi_clamped)
+            # mask invalid entries
+            emb = emb * mask.unsqueeze(-1)
+            prj = proj(emb)
+            embeddings.append(prj)
 
-        # padded_emb_tensor = pad_sequence(embeddings, padding_value=self.padval_)
-        # padded_emb_tensor = rearrange(padded_emb_tensor, 'd s b -> s b d')
-        # padding_mask = padded_emb_tensor == self.padval_
-        # padding_mask = rearrange(padding_mask, 's b d -> b s d')[:, :, 0]
-
-        return torch.cat(embeddings)  # padded_emb_tensor, padding_mask
+        return torch.stack(embeddings)

@@ -121,6 +121,5 @@ class Zwei(nn.Module):
             highs = torch.where(active_mask & (decisions == 0), mids, highs)
 
         tokens = tokens.long()
-        mask = tokens == -1
 
-        return tokens , mask
+        return tokens
