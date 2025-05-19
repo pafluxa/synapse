@@ -124,7 +124,7 @@ class TabularBERT(nn.Module):
         w3 = self.smooth_growth(epoch, 100, 150, low_val=1e-5, high_val=0.01)
         sph_ent, sph_rmu, sph_rep, sph_metrics = self.sph_loss_fn(codecs)
 
-        total_loss = rec_loss + w1 * sph_rmu + w2 * sph_rep + w3 * sph_ent
+        total_loss = rec_loss + w1 * sph_rmu + w2 * sph_rep + w1 * sph_ent
 
         return total_loss, {
             'loss': total_loss.item(),
