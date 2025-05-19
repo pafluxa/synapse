@@ -19,7 +19,7 @@ def hypersphere_autoencoder_loss(x: torch.Tensor,
     radius_loss = ((norms - norms_no_grad.mean()) ** 2).mean()
 
     # 2. Normalized directions (stop gradient for norm)
-    x_normed = x / (norms_no_grad + 1e-7)
+    x_normed = x / (norms_no_grad.mean() + 1e-7)
 
     # Pairwise squared Euclidean distances
     pairwise_dists = torch.cdist(x_normed, x_normed, p=2)  # [N, N]
