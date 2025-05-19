@@ -109,12 +109,12 @@ class SnapshotGenerator:
 
         # 1. Plot codec norms distribution
         plt.subplot(2, 2, 1)
-        plt.hist(norms, bins=100, alpha=0.7, color='blue', label='Codec Norms', histtype='barstacked')
+        plt.hist(norms / avg_norm, bins=100, alpha=0.7, color='blue', label='Codec Norms', histtype='barstacked')
         plt.title(f'Epoch {epoch}: Codec Norms Distribution\n'
                  f'Mean: {norms.mean():.4f}, Var: {norms.var():.6f}')
         plt.xlabel('Norm (normalized to max)')
         plt.ylabel('Frequency')
-        plt.xlim(0.0, 10.0)
+        plt.xlim(0.0, 5.0)
         plt.ylim(0, points.shape[0]//5)
         # plt.yscale('log')
         plt.legend()
