@@ -101,7 +101,7 @@ class SnapshotGenerator:
         """Generate visualization plots for the current epoch"""
 
         points = codecs  # np.dot(codecs, proj)
-        norms = np.dot(points, points.T)
+        norms = np.dot(points.T, points)
         print(norms.shape)
         norms = norms.ravel()
 
