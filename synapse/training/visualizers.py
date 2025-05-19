@@ -112,7 +112,7 @@ class SnapshotGenerator:
                  f'Mean: {norms.mean():.4f}, Var: {norms.var():.6f}')
         plt.xlabel('Norm (normalized to max)')
         plt.ylabel('Frequency')
-        plt.xlim(0.0, 10.0)
+        plt.xlim(0.0, 2.0)
         plt.ylim(0, points.shape[0]//5)
         # plt.yscale('log')
         plt.legend()
