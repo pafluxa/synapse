@@ -106,9 +106,6 @@ class VMFLoss(nn.Module):
         self.repulsion_weight = repulsion_weight
         self.radius_reg_weight = radius_reg_weight
 
-        self.mu = nn.Parameter(torch.randn(dim)) if learn_mu else self.register_buffer('mu', torch.randn(dim))
-        self.kappa = nn.Parameter(torch.tensor(1.0)) if learn_kappa else self.register_buffer('kappa', torch.tensor(1.0))
-
         self.log_bessel_fn = LogBessel(dim=dim)
         self.repulsion_strength = nn.Parameter(torch.tensor(0.01))
 
@@ -128,15 +125,15 @@ class VMFLoss(nn.Module):
         dist_sq = (diff ** 2).sum(-1) + 1e-6
         batch_size = x.size(0)
         mask = ~torch.eye(batch_size, dtype=torch.bool, device=x.device)
-        inv_dist = 1.0 / (dist_sq[mask] + 1e-6)
+        inv_dist = 10.0 / (dist_sq[mask] + 1e-6)
         repulsion = F.sigmoid(self.repulsion_strength * (inv_dist).mean())
 
-        total_loss = h + self.radius_reg_weight * radius_reg + self.repulsion_weight * repulsion
+        # total_loss = h + self.radius_reg_weight * radius_reg + self.repulsion_weight * repulsion
 
         metrics = {
             'sph_vmf': h,
-            'sph_rad': self.radius_reg_weight * radius_reg,
-            'sph_rep': self.repulsion_strength
+            'sph_rad': radius_reg,
+            'sph_rep': repulsion
         }
 
-        return total_loss, metrics
+        return h, radius_reg, repulsion, metrics
