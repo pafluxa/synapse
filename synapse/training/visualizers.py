@@ -102,6 +102,8 @@ class SnapshotGenerator:
 
         points = codecs  # np.dot(codecs, proj)
         norms = np.dot(points, points.T)
+        print(norms.shape)
+        norms = norms.ravel()
 
         plt.figure(figsize=(18, 12))
 
