@@ -29,11 +29,11 @@ class RunConfiguration:
         self.dropout = 0.15
 
         # Bottleneck configuration
-        self.codec_dim = 3
+        self.codec_dim = 8
 
         # Training configuration
         self.num_workers = 4
-        self.batch_size = 1024
+        self.batch_size = 256
         self.num_epochs = 1000
         self.learning_rate = 1e-4
         self.weight_decay = 1e-9

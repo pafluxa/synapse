@@ -100,7 +100,7 @@ class SnapshotGenerator:
     ):
         """Generate visualization plots for the current epoch"""
 
-        points = codecs  #np.dot(codecs, proj)
+        points = np.dot(codecs, proj)
         max_x = np.max(points[:, 0])
         max_y = np.max(points[:, 1])
         max_z = np.max(points[:, 2])
