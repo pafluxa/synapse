@@ -63,7 +63,7 @@ class LogBessel(nn.Module):
         return torch.log(bessel_iv(nu_tensor, kappa_safe) + self.eps)
 
 
-def spherical_knn_entropy(x: torch.Tensor, k: int = 8, eps: float = 1e-6) -> torch.Tensor:
+def spherical_knn_entropy(x: torch.Tensor, k: int, eps: float = 1e-6) -> torch.Tensor:
     """
     Estimate entropy of points on a unit hypersphere using Kozachenko–Leonenko (KL) method.
 
@@ -116,30 +116,26 @@ class VMFLoss(nn.Module):
 
         # entropy estimation
         x_norm = F.normalize(x, p=2, dim=-1)
-        h = -spherical_knn_entropy(x_norm, k=4)
+        h = -spherical_knn_entropy(x_norm, k=32)
         # penalize norms away from average
         norms = x.norm(p=2, dim=-1)
         radius_reg = torch.mean((norms - norms.detach().mean())**2)
 
-        # Electrostatic-style repulsion
-        # batch_size = x.size(0)
-        # if batch_size > 1:
-        #     norms = x.norm(p=2, dim=-1, keepdim=True)
-        #     x_unit = x / norms.detach()
-        #     diff = x_unit.unsqueeze(1) - x_unit.unsqueeze(0)
-        #     dist_sq = (diff ** 2).sum(-1) + 1e-6
-        #     mask = ~torch.eye(batch_size, dtype=torch.bool, device=x.device)
-        #     inv_dist = 1.0 / (dist_sq[mask] + 1e-6)
-        #     repulsion = self.repulsion_strength * inv_dist.mean()
-        # else:
-        #     repulsion = torch.tensor(0.0, device=x.device)
+        # adds electrostatic-style repulsion
+        norms = x.norm(p=2, dim=-1, keepdim=True)
+        x_unit = x / norms.detach()
+        diff = x_unit.unsqueeze(1) - x_unit.unsqueeze(0)
+        dist_sq = (diff ** 2).sum(-1) + 1e-6
+        mask = ~torch.eye(batch_size, dtype=torch.bool, device=x.device)
+        inv_dist = 1.0 / (dist_sq[mask] + 1e-6)
+        repulsion = F.sigmoid(self.repulsion_strength) * (inv_dist.mean())
 
-        total_loss = h + radius_reg
+        total_loss = h + radius_reg + self.repulsion_weight * repulsion
 
         metrics = {
             'sph_vmf': h,
-            'sph_rad': self.radius_reg_weight * radius_reg,
-            'sph_rep': self.repulsion_weight * 0.0 * radius_reg + 0.001
+            'sph_rad': radius_reg,
+            'sph_rep': self.repulsion_weight * repulsion
         }
 
         return total_loss, metrics
