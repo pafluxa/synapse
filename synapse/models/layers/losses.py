@@ -102,7 +102,7 @@ class VMFLoss(nn.Module):
         log_C = (
             (self.dim / 2 - 1) * torch.log(kappa)
             - (self.dim / 2) * torch.log(torch.tensor(2 * math.pi))
-            - self.log_bessel(kappa)
+            - self.log_bessel_fn(kappa)
         )
 
         # Dot product κ μᵀx
