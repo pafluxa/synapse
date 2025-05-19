@@ -62,8 +62,8 @@ class VMFLoss(nn.Module):
             learn_mu=True,
             learn_kappa=True,
             learn_radius=False,
-            repulsion_weight=1.0,
-            radius_reg_weight=0.5):
+            repulsion_weight=0.1,
+            radius_reg_weight=1.0):
         super().__init__()
         self.dim = dim
         self.repulsion_weight = repulsion_weight
@@ -101,7 +101,6 @@ class VMFLoss(nn.Module):
         x_projected = x_normalized * self.radius
 
         # μ normalized
-        mu = F.normalize(self.mu, p=2, dim=-1)
         kappa = torch.clamp(self.kappa, min=1e-3)
 
         # log normalizer
@@ -112,7 +111,7 @@ class VMFLoss(nn.Module):
         )
 
         # Dot product κ μᵀx
-        dot_product = torch.sum(mu * x_normalized, dim=-1)
+        dot_product = torch.sum(x_normalized, dim=-1)
 
         # vMF negative log-likelihood
         nll = - (log_C + kappa * dot_product)
