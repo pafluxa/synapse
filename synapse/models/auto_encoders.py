@@ -122,12 +122,12 @@ class TabularBERT(nn.Module):
 
         # Spherical loss components
         w1 = self.smooth_growth(epoch, 0, 50, low_val=1e-5, high_val=0.1)
-        w2 = self.smooth_growth(epoch, 50, 100, low_val=1e-5, high_val=0.01)
+        w2 = self.smooth_growth(epoch, 40, 100, low_val=1e-5, high_val=0.01)
         w3 = self.smooth_growth(epoch, 100, 150, low_val=1e-5, high_val=0.01)
         sph_ent, sph_rmu, sph_rep, sph_metrics = self.sph_loss_fn(codecs)
 
         # Total loss
-        total_loss = rec_loss + w1 * sph_rmu + w2 * sph_rep + w1 * sph_ent + kl_loss
+        total_loss = rec_loss + w2 * sph_rmu + w2 * sph_rep + w2 * sph_ent + w1 * kl_loss
 
         return total_loss, {
             'loss': total_loss.item(),
