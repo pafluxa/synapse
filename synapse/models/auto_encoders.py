@@ -58,8 +58,8 @@ class TabularBERT(nn.Module):
         )
 
         self.bottleneck = nn.Linear(100, self.codec_dim)
-        self.fc_mu = nn.Linear(100, self.codec_dim)
-        self.fc_log_var = nn.Linear(100, self.codec_dim)
+        self.fc_mu = nn.Linear(1, self.codec_dim)
+        self.fc_log_var = nn.Linear(1, self.codec_dim)
 
         # Decoder
         self.decoder_expand = nn.Sequential(
