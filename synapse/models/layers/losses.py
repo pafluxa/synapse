@@ -63,6 +63,41 @@ class LogBessel(nn.Module):
         return torch.log(bessel_iv(nu_tensor, kappa_safe) + self.eps)
 
 
+def spherical_knn_entropy(x: torch.Tensor, k: int = 8, eps: float = 1e-6) -> torch.Tensor:
+    """
+    Estimate entropy of points on a unit hypersphere using Kozachenko–Leonenko (KL) method.
+
+    Args:
+        x (Tensor): Normalized data points of shape (N, D), assumed to lie on a unit hypersphere.
+        k (int): Number of nearest neighbors to consider (default = 1).
+        eps (float): Small constant to avoid log(0).
+
+    Returns:
+        Tensor: Estimated differential entropy (scalar).
+    """
+    N, D = x.shape
+    device = x.device
+
+    # Compute cosine similarity
+    cos_sim = x @ x.T
+    cos_sim = cos_sim.clamp(-1 + eps, 1 - eps)
+
+    # Convert to squared chord distance on sphere
+    chord_sq = 2 - 2 * cos_sim
+
+    # Mask diagonal by setting to large value without in-place op
+    mask = torch.eye(N, device=device, dtype=torch.bool)
+    chord_sq_masked = chord_sq.masked_fill(mask, float('inf'))
+
+    # Find k-th nearest neighbor distance
+    knn_dists, _ = torch.topk(chord_sq_masked, k=k, dim=1, largest=False)
+    eps_i = knn_dists[:, -1] + eps
+
+    # Entropy estimate
+    entropy = ((D - 1) * torch.log(eps_i)).mean()
+    return entropy
+
+
 class VMFLoss(nn.Module):
     def __init__(self, dim, learn_mu=True, learn_kappa=True,
                  repulsion_weight=0.2, radius_reg_weight=0.8):
@@ -78,43 +113,31 @@ class VMFLoss(nn.Module):
         self.repulsion_strength = nn.Parameter(torch.tensor(0.01))
 
     def forward(self, x: torch.Tensor):
-        x_norm = F.normalize(x, dim=-1)
-        mu = F.normalize(self.mu, p=2, dim=-1)
-        kappa = torch.clamp(self.kappa, min=1e-3)
 
-        # vMF negative log-likelihood
-        # log_C = ((self.dim/2 - 1) * torch.log(kappa)
-        #          - (self.dim/2) * torch.log(2 * torch_pi)
-        #          - self.log_bessel_fn(kappa))
-        # dot = torch.sum(mu * x_norm, dim=-1)
-        # nll = -(log_C + kappa * dot)
-        # vmf = nll.mean()
-
-        # Anti-alignment objective (dot product with mu)
-        dot = torch.sum(mu * x_norm, dim=-1)  # shape: (batch,)
-        vmf = (kappa * dot).mean()            # minimize this to penalize alignment
-
-        # Radius regularization
+        # entropy estimation
+        x_norm = F.normalize(x, p=2, dim=-1)
+        h = -spherical_knn_entropy(x_norm, k=4)
+        # penalize norms away from average
         norms = x.norm(p=2, dim=-1)
         radius_reg = torch.mean((norms - norms.detach().mean())**2)
 
         # Electrostatic-style repulsion
-        batch_size = x.size(0)
-        if batch_size > 1:
-            norms = x.norm(p=2, dim=-1, keepdim=True)
-            x_unit = x / norms.detach()
-            diff = x_unit.unsqueeze(1) - x_unit.unsqueeze(0)
-            dist_sq = (diff ** 2).sum(-1) + 1e-6
-            mask = ~torch.eye(batch_size, dtype=torch.bool, device=x.device)
-            inv_dist = 1.0 / (dist_sq[mask] + 1e-6)
-            repulsion = self.repulsion_strength * inv_dist.mean()
-        else:
-            repulsion = torch.tensor(0.0, device=x.device)
+        # batch_size = x.size(0)
+        # if batch_size > 1:
+        #     norms = x.norm(p=2, dim=-1, keepdim=True)
+        #     x_unit = x / norms.detach()
+        #     diff = x_unit.unsqueeze(1) - x_unit.unsqueeze(0)
+        #     dist_sq = (diff ** 2).sum(-1) + 1e-6
+        #     mask = ~torch.eye(batch_size, dtype=torch.bool, device=x.device)
+        #     inv_dist = 1.0 / (dist_sq[mask] + 1e-6)
+        #     repulsion = self.repulsion_strength * inv_dist.mean()
+        # else:
+        #     repulsion = torch.tensor(0.0, device=x.device)
 
-        total_loss = (repulsion - vmf) + self.radius_reg_weight * radius_reg
+        total_loss = h + radius_reg
 
         metrics = {
-            'sph_vmf': vmf,
+            'sph_vmf': h,
             'sph_rad': self.radius_reg_weight * radius_reg,
             'sph_rep': self.repulsion_weight * repulsion
         }
