@@ -29,7 +29,7 @@ def hypersphere_autoencoder_loss(x: torch.Tensor,
     valid_dists = pairwise_dists[mask]
 
     # Inverse-square repulsion (clipped for stability)
-    repulsion = (1.0 / (valid_dists.pow(2) + 1e-8)).mean()
+    repulsion = torch.log1p((1.0 / (valid_dists.pow(2) + 1e-8)).mean())
 
     return alpha * radius_loss, beta * repulsion
 
