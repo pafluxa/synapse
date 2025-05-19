@@ -111,7 +111,7 @@ class VMFLoss(nn.Module):
         total_loss = neg_entropy + self.radius_reg_weight * radius_reg # + self.repulsion_weight * repulsion
 
         metrics = {
-            'sph_entropy': neg_entropy,
+            'sph_vmf': neg_entropy,
             'sph_rad': self.radius_reg_weight * radius_reg,
             'sph_rep': self.repulsion_weight * repulsion
         }
