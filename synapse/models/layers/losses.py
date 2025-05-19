@@ -102,7 +102,9 @@ class VMFLoss(nn.Module):
         vmf = nll.mean()
 
         norms = x.norm(p=2, keepdim=True, dim=-1)
-        radius_reg = torch.mean((norms - norms.detach().mean()) ** 2)
+        norms2 = x.norm(p=2, dim=-1)
+        norms_mean = norms2.clone().detach().mean()
+        radius_reg = torch.mean((norms2 - norms_mean) ** 2)
 
         batch_size = x.size(0)
         x_norm_d = x / norms.detach()
