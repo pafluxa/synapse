@@ -128,8 +128,8 @@ class VMFLoss(nn.Module):
         dist_sq = (diff ** 2).sum(-1) + 1e-6
         batch_size = x.size(0)
         mask = ~torch.eye(batch_size, dtype=torch.bool, device=x.device)
-        inv_dist = 1.0 / (dist_sq[mask] + 1e-6)
-        repulsion = F.sigmoid(self.repulsion_strength) * (inv_dist.mean())
+        # inv_dist = 1.0 / (dist_sq[mask] + 1e-6)
+        repulsion = torch.mean(torch.exp(-dist_sq[mask])) #F.sigmoid(self.repulsion_strength) * (inv_dist.mean())
 
         total_loss = h + radius_reg + self.repulsion_weight * repulsion
 
