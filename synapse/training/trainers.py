@@ -143,8 +143,8 @@ class MaskedEmbeddingTrainer:
 
             # Forward pass
             with timer('forward_pass', metrics):
-                codecs, decoded = self.model(masked_num, masked_cat)
-                outputs = (codecs, decoded)
+                codecs, decoded, mu, log_var = self.model(masked_num, masked_cat)
+                outputs = (codecs, decoded, mu, log_var)
             # Loss computation
             with timer('loss_compute', metrics):
                 loss, metrics_dict = self.model.loss(
