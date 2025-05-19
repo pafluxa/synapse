@@ -116,7 +116,11 @@ class VMFLoss(nn.Module):
         radius_reg = torch.mean((norms - norms.detach().mean()) ** 2)
 
         # Repulsion loss: discourage vector collapse (maximize spread)
-        similarity_matrix = F.cosine_similarity(x.unsqueeze(1), x.unsqueeze(0), dim=-1)
+        similarity_matrix = F.cosine_similarity(
+            x_normalized.unsqueeze(1),
+            x_normalized.unsqueeze(0),
+            dim=-1
+        )
         identity = torch.eye(x.size(0), device=x.device)
         repulsion = ((similarity_matrix - identity) ** 2).mean()
 
