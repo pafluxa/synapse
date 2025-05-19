@@ -28,8 +28,15 @@ def hypersphere_autoencoder_loss(x: torch.Tensor,
     mask = ~torch.eye(len(x), dtype=torch.bool, device=x.device)
     valid_dists = pairwise_dists[mask]
 
-    # Inverse-square repulsion (clipped for stability)
-    repulsion = torch.log1p((1.0 / (valid_dists.pow(2) + 1e-8)).mean())
+    # Stabilized 1/r² with soft clipping and damping
+    min_dist = 0.5
+    max_dist = 2.0
+    dist_ratio = (valid_dists / min_dist).clamp_min(1.0)
+    repulsion = torch.where(
+        valid_dists <= max_dist,
+        torch.log(1.0 + 1.0 / (dist_ratio.pow(2) + eps),  # Damped repulsion
+        0.0  # No repulsion beyond max_dist
+    )
 
     return alpha * radius_loss, beta * repulsion
 
