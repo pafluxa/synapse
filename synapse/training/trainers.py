@@ -11,7 +11,7 @@ from torch import optim
 from torch.utils.data import DataLoader
 
 from synapse.models.auto_encoders import TabularBERT
-from synapse.training.visualizers import SnapshotGenerator
+from synapse.utils.visuals import SnapshotGenerator
 
 
 @contextmanager

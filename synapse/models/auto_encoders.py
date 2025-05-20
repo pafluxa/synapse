@@ -7,9 +7,9 @@ import torch.nn.functional as F
 
 from einops import rearrange
 
-from synapse.models.layers.embeddings import CategoricalEmbedding, NumericalEmbedding
+from synapse.models.layers.embeddings import CategoricalEmbedding
+from synapse.models.layers.embeddings import NumericalEmbedding
 from synapse.models.layers.feature_encoders import Zwei
-from synapse.models.layers.losses import hypersphere_autoencoder_loss
 
 
 class TabularBERT(nn.Module):
@@ -92,7 +92,9 @@ class TabularBERT(nn.Module):
         cat_emb = rearrange(cat_emb, 's b e -> b s e')
         cmb_emb = torch.cat([num_emb, cat_emb], dim=1)
 
-        rec_loss = torch.mean((decoded - cmb_emb)**2)
+        mse_loss = torch.mean((decoded - cmb_emb)**2)
+
+        return mse_loss
 
         # Adaptive weighting
         w_rad = (1 + torch.sigmoid(torch.tensor((epoch - 20)/10)))  # Smooth ramp

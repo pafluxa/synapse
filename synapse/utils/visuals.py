@@ -1,14 +1,10 @@
-from os import read
 from typing import Dict, List, Tuple, Optional, Any
-import multiprocessing
 from multiprocessing import Process
 from multiprocessing import Queue
 
 import time
-import sys
 
 import numpy as np
-from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 
 def generate_static_basis(input_dim, output_dim=3, seed=42):
