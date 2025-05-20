@@ -7,9 +7,9 @@ import torch.nn.functional as F
 
 from einops import rearrange
 
-from synapse.models.layers.embeddings import CategoricalEmbedding
-from synapse.models.layers.embeddings import NumericalEmbedding
-from synapse.models.layers.feature_encoders import Zwei
+from synapse.layers.embeddings import CategoricalEmbedding
+from synapse.layers.embeddings import NumericalEmbedding
+from synapse.layers.feature_encoders import Zwei
 
 
 class TabularBERT(nn.Module):
