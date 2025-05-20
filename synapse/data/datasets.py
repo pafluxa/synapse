@@ -18,7 +18,7 @@ from sklearn.preprocessing import MinMaxScaler, OrdinalEncoder
 from torch.utils.data import IterableDataset
 from sklearn.model_selection import train_test_split
 
-from synapse.types import (
+from synapse.types.torch import (
     FloatTensor,
     LongTensor,
     Tensor1D,
