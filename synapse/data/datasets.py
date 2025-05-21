@@ -258,8 +258,7 @@ class CSVInferenceDataset(CSVDataset):
 
         self.label_col = label_col
         # read the single label column once (cheap compared to full preprocessing)
-        categorical_cols.append(label_col)
-        df = pd.read_csv(file_path, usecols=numerical_cols + categorical_cols)
+        df = pd.read_csv(file_path, usecols=self.numerical_cols + self.categorical_cols + [self.label_col,])
         if label_col not in df.columns:
             raise ValueError(f"Label column '{label_col}' not found in CSV.")
 
@@ -272,13 +271,11 @@ class CSVInferenceDataset(CSVDataset):
             self.scaler.transform(
                 chunk[self.numerical_cols].values)
         )
-        self.categorical_cols.remove(self.label_col)
         self.categorical = torch.LongTensor(
             self.encoder.transform(chunk[self.categorical_cols].values)
         )
-        self.labels = torch.LongTensor(
-            self.encoder.transform(chunk[[self.label_col,]].values)
-        )
+
+        self.labels = torch.LongTensor(df[[self.label_col,]].values)
 
     # -----------------------------------------------------------------
     def __iter__(self):

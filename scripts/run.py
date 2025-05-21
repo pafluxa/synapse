@@ -13,7 +13,7 @@ from torch.utils.data import TensorDataset
 from synapse.data.datasets import CSVDataset
 from synapse.utils.config_parser import RunConfiguration
 from synapse.training.trainers import MaskedEmbeddingTrainer
-from synapse.training.trainers import SphereContrastiveTrainer
+from synapse.training.trainers import RotationTripletTrainer
 from synapse.models.auto_encoders import TabularBERT
 
 # ----------------------------------------------------------------------
@@ -41,6 +41,7 @@ def main(argv=None):
 
     p = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     p.add_argument("--config", required=True)
+    p.add_argument("--ae_checkpoint", required=False)
     args = p.parse_args(argv)
 
     cfg = RunConfiguration.from_yaml(args.config)
@@ -58,27 +59,28 @@ def main(argv=None):
     )
     cfg.attach_dataset(train_set, val_set, test_set)
 
-    # === 2. Train MaskedEmbedding model ------------------------------
-    bert_trainer = MaskedEmbeddingTrainer(cfg)
-    bert_trainer.train()
+    if args.ae_checkpoint is None:
+        # === 2. Train MaskedEmbedding model ------------------------------
+        bert_trainer = MaskedEmbeddingTrainer(cfg)
+        bert_trainer.train()
 
-    # Path to best auto-encoder checkpoint (created by the trainer)
-    best_ckpt = Path(bert_trainer.ckpt_dir) / "best.pt"
+        # Path to best auto-encoder checkpoint (created by the trainer)
+        best_ckpt = Path(bert_trainer.ckpt_dir) / "best.pt"
+
+    else:
+        best_ckpt = args.ae_checkpoint
 
     # === 3. Load encoder & extract codecs ----------------------------
     device = "cuda" if torch.cuda.is_available() else "cpu"
     encoder = TabularBERT.load(best_ckpt, cfg, device=device)
-
     train_codecs = codecs_from_dataset(train_set, encoder, cfg.batch_size, device)
     val_codecs   = codecs_from_dataset(val_set,   encoder, cfg.batch_size, device)
-    test_codecs  = codecs_from_dataset(test_set,  encoder, cfg.batch_size, device)
 
     # === 4. Train SphereClassifier -----------------------------------
-    sphere_trainer = SphereContrastiveTrainer(
+    sphere_trainer = RotationTripletTrainer(
         train_codecs=train_codecs,
         val_codecs=val_codecs,
-        test_codecs=test_codecs,
-        cfg=cfg,                       # uses cfg fields (lr, epochs, etc.)
+        cfg=cfg,
     )
     sphere_trainer.fit()
 

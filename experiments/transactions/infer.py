@@ -3,13 +3,17 @@
 """
 CSV  ➜  TabularBERT.encode() ➜ SphereClassifier ➜  metrics + predictions.
 """
+from typing import Tuple
 
 import argparse
 import csv
 from pathlib import Path
 import sys
-
 import numpy as np
+from sklearn.svm import OneClassSVM
+from sklearn.cluster import HDBSCAN
+from scipy.stats import pearsonr
+import matplotlib.pyplot as plt
 import torch
 from torch.utils.data import DataLoader
 
@@ -27,7 +31,7 @@ from sklearn.metrics import (
 from synapse.utils.config_parser import RunConfiguration
 from synapse.data.datasets import CSVDataset, CSVInferenceDataset
 from synapse.models.auto_encoders import TabularBERT
-from synapse.models.sphere_classifier import SphereClassifier
+from synapse.models.sphere_classifier import RotationConvNet as SphereClassifier
 
 
 # ------------------------------------------------------------------ helpers
@@ -45,7 +49,76 @@ def run_inference(ae, sph, loader, device):
 
     preds = np.concatenate(preds)
     labels = np.concatenate(labels) if labels else None
-    return preds, labels
+    return preds, labels.ravel()
+
+def kmeans_label_alignment(
+    X: np.ndarray,
+    y: np.ndarray,
+    visualize: bool = True,
+    random_state: int = 0,
+) -> Tuple[float, np.ndarray]:
+    """
+    Cluster a batch of D-dimensional vectors into **2 clusters** and
+    measure how well *cluster index* (0/1) aligns with *binary labels*
+    (0/1).
+
+    Parameters
+    ----------
+    X : (N, D) numpy array of vectors
+    y : (N,)   numpy int array with values {0,1}
+    visualize : bool  – if True, shows a PCA-2D scatter with colours=cluster,
+                        edge-colours=labels
+    random_state : int  – passed to sklearn.KMeans for reproducibility
+
+    Returns
+    -------
+    score : float  in [0, 1]
+            (corr + 1) / 2, where corr = Pearson(cluster, label)
+    clusters : (N,) int array of assigned cluster indices
+    """
+    if X.shape[0] != len(y):
+        raise ValueError("X and y must have the same length")
+
+    # --- k-means in original D ---------------------------------------
+    kmeans = HDBSCAN()  #(n_clusters=2, n_init="auto", random_state=random_state)
+    clusters = kmeans.fit_predict(X)               # values {0,1}
+    print(np.unique(clusters))
+    # --- correlation --------------------------------------------------
+    corr, _ = pearsonr(clusters, y.ravel())                # --> [-1, 1]
+    score = (corr + 1) / 2                         # --> [0, 1]
+
+    # --- optional plot -----------------------------------------------
+    if visualize:
+        try:
+            from sklearn.decomposition import PCA
+
+            pca = PCA(n_components=2)
+            X2 = pca.fit_transform(X)
+
+            fig, ax = plt.subplots(figsize=(6, 5))
+            scatter = ax.scatter(
+                X2[:, 0],
+                X2[:, 1],
+                c=clusters,
+                cmap="coolwarm",
+                alpha=0.7,
+                edgecolors=["k" if l == 0 else "w" for l in y],
+                linewidths=0.7,
+            )
+            ax.set_title(f"k-means vs labels,  score = {score:.3f}")
+            ax.set_xlabel("PCA-1")
+            ax.set_ylabel("PCA-2")
+            plt.legend(
+                handles=scatter.legend_elements()[0],
+                labels=["cluster 0", "cluster 1"],
+                loc="best",
+            )
+            plt.tight_layout()
+            plt.savefig('clusters.png')
+        except ImportError:
+            print("matplotlib or sklearn.decomposition missing – skipping plot.")
+
+    return score, clusters
 
 
 # ------------------------------------------------------------------ CLI
@@ -93,8 +166,8 @@ def main(argv=None):
     )
 
     # 3) inference
-    preds, labels = run_inference(ae, sph, loader, device)
-
+    embs, labels = run_inference(ae, sph, loader, device)
+    score, preds = kmeans_label_alignment(embs, labels)
     # 4) results
     if labels is not None:
         print("\n----------------  Classification report  ----------------")
@@ -121,7 +194,6 @@ def main(argv=None):
         header = ["prediction"] if labels is None else ["label", "prediction"]
         w.writerow(header)
         for i, p in enumerate(preds):
-            print(p, labels[i])
             row = [int(p)] if labels is None else [int(labels[i]), int(p)]
             w.writerow(row)
     print("Predictions saved to", out_path)

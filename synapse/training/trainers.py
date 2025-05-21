@@ -17,12 +17,25 @@ from torch.utils.data import TensorDataset
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-from synapse.models.sphere_classifier import SphereClassifier
+from synapse.models.sphere_classifier import RotationConvNet as SphereClassifier
 from synapse.models.sphere_classifier import SVDRotationAugmenter
 from synapse.utils.config_parser import RunConfiguration
 from synapse.models.auto_encoders import TabularBERT, knn_entropy
 from synapse.utils.visuals import SnapshotGenerator
 
+
+def contrastive_loss_fn(x1, x2, label, margin: float = 1.0):
+    """
+    Computes Contrastive Loss
+    """
+
+    dist = torch.nn.functional.pairwise_distance(x1, x2)
+
+    loss = (1 - label) * torch.pow(dist, 2) \
+        + (label) * torch.pow(torch.clamp(margin - dist, min=0.0), 2)
+    loss = torch.mean(loss)
+
+    return loss
 
 # ------------------------------------------------------------------ metrics
 def binary_metrics_from_logits(logits_pred: torch.Tensor,
@@ -332,6 +345,123 @@ class MaskedEmbeddingTrainer:
         self._shutdown_visualiser()
 # -------------------------------------------------------------------------
 
+
+class RotationTripletTrainer:
+    """
+    Learns to assign **similar scalar scores** to unitary rotations and
+    **distant scores** (≥ margin) to perturbed (non-unitary) rotations.
+
+    Loss:   TripletMarginLoss(anchor, positive, negative, margin=1.0, p=2)
+    Output: 1-D embedding (= scalar score)
+    """
+
+    def __init__(
+        self,
+        train_codecs: torch.Tensor,          # [N, D]
+        val_codecs: torch.Tensor,            # [M, D]
+        cfg: RunConfiguration,                                 # RunConfiguration
+        margin: float = 0.25,
+    ):
+        self.cfg = cfg
+        self.device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu"
+        )
+
+        # ---------------- data loaders -------------------------------
+        self.train_loader = DataLoader(
+            TensorDataset(train_codecs.to(self.device)),
+            batch_size=cfg.batch_size, shuffle=True
+        )
+        self.val_loader = DataLoader(
+            TensorDataset(val_codecs.to(self.device)),
+            batch_size=cfg.batch_size, shuffle=False
+        )
+
+        # ---------------- model + loss + opt -------------------------
+        self.model = SphereClassifier(cfg.codec_dim).to(self.device)
+
+        self.triplet = nn.TripletMarginLoss(margin=margin, p=2)
+        self.opt      = optim.Adam(
+            self.model.parameters(), lr=cfg.learning_rate,
+        )
+
+        self.aug = SVDRotationAugmenter(train_codecs.shape[1], epsilon=0.1)
+
+        # ---------------- logging & checkpoints ----------------------
+        run_id = getattr(cfg, "run_id", datetime.now().strftime("%Y%m%d-%H%M%S"))
+        self.writer = SummaryWriter(os.path.join("runs", f"rot_triplet_{run_id}"))
+        self.ckpt_dir = os.path.join("checkpoints", f"rot_triplet_{run_id}")
+        os.makedirs(self.ckpt_dir, exist_ok=True)
+
+        self.best_val = float("inf")
+        self.bad_epochs = 0
+
+    # ----------------------------------------------------------------
+    def _make_triplet(self, z: torch.Tensor):
+        R, P = self.aug.generate_pair(self.device)
+        pos = (R @ z.T).T
+        neg = (P @ z.T).T
+        return z, pos, neg
+
+    # ----------------------------------------------------------------
+    def _epoch(self, loader, train: bool):
+        self.model.train(train)
+        losses = 0.0
+        for data in tqdm(loader, leave=False):
+            anchor = data[0].to(self.device)
+            a, p, n = self._make_triplet(anchor)
+
+            s_a = self.model(a).unsqueeze(1)   # shape [B,1]
+            s_p = self.model(p).unsqueeze(1)
+            s_n = self.model(n).unsqueeze(1)
+
+            loss = contrastive_loss_fn(s_a, s_p, torch.tensor(0.0), torch.tensor(0.5))
+            loss += contrastive_loss_fn(s_a, s_n, torch.tensor(1.0), torch.tensor(0.5))
+
+            if train:
+                self.opt.zero_grad(set_to_none=True)
+                loss.backward()
+                self.opt.step()
+
+            losses += loss.item()
+
+        return losses / len(loader)
+
+    # ----------------------------------------------------------------
+    def fit(self):
+        for epoch in range(self.cfg.num_epochs):
+            train_loss = self._epoch(self.train_loader, train=True)
+            val_loss   = self._epoch(self.val_loader,   train=False)
+
+            self.writer.add_scalar("Loss/Train", train_loss, epoch)
+            self.writer.add_scalar("Loss/Val",   val_loss,   epoch)
+            print(f"Epoch {epoch:03d}  train={train_loss:.4f}  val={val_loss:.4f}")
+
+            ckpt = os.path.join(self.ckpt_dir, f"epoch_{epoch}.pt")
+            torch.save({"model": self.model.state_dict(),
+                        "val_loss": val_loss,
+                        "epoch": epoch}, ckpt)
+
+            if val_loss < self.best_val:
+                self.best_val = val_loss
+                self.bad_epochs = 0
+                best = os.path.join(self.ckpt_dir, "best.pt")
+                try:
+                    if os.path.islink(best) or os.path.exists(best):
+                        os.unlink(best)
+                    os.symlink(os.path.basename(ckpt), best)
+                except OSError:
+                    shutil.copy2(ckpt, best)
+            else:
+                self.bad_epochs += 1
+
+            if self.bad_epochs >= self.cfg.patience:
+                print("Early stopping.")
+                break
+
+        self.writer.close()
+
+
 class SphereContrastiveTrainer:
     """
     Train SphereClassifier using triplet contrastive + BCE.
@@ -391,7 +521,7 @@ class SphereContrastiveTrainer:
 
         # ─── logs / checkpoints --------------------------------------
         run_id = getattr(cfg, "run_id", datetime.now().strftime("%Y%m%d-%H%M%S"))
-        self.writer = SummaryWriter(os.path.join(cfg.viz_dir, f"sphere_{run_id}"))
+        self.writer = SummaryWriter(os.path.join("runs", f"sphere_{run_id}"))
         self.ckpt_dir = os.path.join("checkpoints", f"sphere_{run_id}")
         os.makedirs(self.ckpt_dir, exist_ok=True)
 
