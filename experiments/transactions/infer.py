@@ -31,7 +31,7 @@ from sklearn.metrics import (
 from synapse.utils.config_parser import RunConfiguration
 from synapse.data.datasets import CSVDataset, CSVInferenceDataset
 from synapse.models.auto_encoders import TabularBERT
-from synapse.models.sphere_classifier import RotationConvNet as SphereClassifier
+from synapse.models.sphere_classifier import DirectionRadiusGatedMLP as SphereClassifier
 
 
 # ------------------------------------------------------------------ helpers
@@ -45,7 +45,7 @@ def run_inference(ae, sph, loader, device):
         x_num, x_cat = x_num.to(device), x_cat.to(device)
         z = ae.encode(x_num, x_cat)
         p = sph.predict(z)               # 0 / 1
-        preds.append(p.cpu().numpy())
+        preds.append(z.cpu().numpy())
 
     preds = np.concatenate(preds)
     labels = np.concatenate(labels) if labels else None
@@ -160,14 +160,18 @@ def main(argv=None):
     ae = TabularBERT.load(args.ae_ckpt, cfg, device=device)
     sph = SphereClassifier.load(
         args.sphere_ckpt,
-        codec_dim=cfg.codec_dim,
-        hidden_dim=cfg.hidden_dim,
+        in_dim=cfg.codec_dim,
         device=device,
     )
 
     # 3) inference
     embs, labels = run_inference(ae, sph, loader, device)
-    score, preds = kmeans_label_alignment(embs, labels)
+    print("mean norm for label = 0", np.average(np.linalg.norm(embs[labels == 0], axis=1)))
+    print("mean norm for label = 1", np.average(np.linalg.norm(embs[labels == 1], axis=1)))
+    clf = OneClassSVM(gamma='auto').fit(embs)
+    preds = clf.predict(embs)
+    preds[preds == -1] = 1
+    preds[preds == 1] = 0
     # 4) results
     if labels is not None:
         print("\n----------------  Classification report  ----------------")

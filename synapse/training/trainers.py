@@ -17,25 +17,12 @@ from torch.utils.data import TensorDataset
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-from synapse.models.sphere_classifier import RotationConvNet as SphereClassifier
-from synapse.models.sphere_classifier import SVDRotationAugmenter
+from synapse.models.sphere_classifier import DirectionRadiusGatedMLP as SphereClassifier
+from synapse.data.datasets import RotationPairDataset
 from synapse.utils.config_parser import RunConfiguration
 from synapse.models.auto_encoders import TabularBERT, knn_entropy
 from synapse.utils.visuals import SnapshotGenerator
 
-
-def contrastive_loss_fn(x1, x2, label, margin: float = 1.0):
-    """
-    Computes Contrastive Loss
-    """
-
-    dist = torch.nn.functional.pairwise_distance(x1, x2)
-
-    loss = (1 - label) * torch.pow(dist, 2) \
-        + (label) * torch.pow(torch.clamp(margin - dist, min=0.0), 2)
-    loss = torch.mean(loss)
-
-    return loss
 
 # ------------------------------------------------------------------ metrics
 def binary_metrics_from_logits(logits_pred: torch.Tensor,
@@ -268,7 +255,7 @@ class MaskedEmbeddingTrainer:
             train_m, train_codecs = self._run_epoch(
                 self.train_loader, w1, w2, train=True
             )
-            val_m, _ = self._run_epoch(self.val_loader, w1, w2, train=False)
+            val_m, val_codecs = self._run_epoch(self.val_loader, w1, w2, train=False)
 
             # schedule (unchanged)
             n1 += float(train_m["mse_loss"] < 1.0)
@@ -295,9 +282,9 @@ class MaskedEmbeddingTrainer:
             self.q.put(
                 {
                     "epoch": epoch,
-                    "codecs": train_codecs,
-                    "history": self.train_hist,
-                    "metrics": train_m,
+                    "codecs": val_codecs,
+                    "history": self.val_hist,
+                    "metrics": val_m,
                     "stop": False,
                 }
             )
@@ -360,7 +347,7 @@ class RotationTripletTrainer:
         train_codecs: torch.Tensor,          # [N, D]
         val_codecs: torch.Tensor,            # [M, D]
         cfg: RunConfiguration,                                 # RunConfiguration
-        margin: float = 0.25,
+        margin: float = 1.0,
     ):
         self.cfg = cfg
         self.device = torch.device(
@@ -370,22 +357,35 @@ class RotationTripletTrainer:
         # ---------------- data loaders -------------------------------
         self.train_loader = DataLoader(
             TensorDataset(train_codecs.to(self.device)),
-            batch_size=cfg.batch_size, shuffle=True
+            batch_size=cfg.batch_size,
+            shuffle=True,
+            num_workers=cfg.num_workers,
+            persistent_workers=True,
+            drop_last=True
         )
         self.val_loader = DataLoader(
             TensorDataset(val_codecs.to(self.device)),
-            batch_size=cfg.batch_size, shuffle=False
+            batch_size=cfg.batch_size,
+            shuffle=False,
+            num_workers=cfg.num_workers,
+            persistent_workers=True,
+            drop_last=True
         )
-
+        rp_mats = RotationPairDataset(cfg.codec_dim, n_samples=2 * train_codecs.shape[0])
+        self.aug_loader = DataLoader(rp_mats,
+            batch_size=cfg.batch_size,
+            num_workers=cfg.num_workers,
+            persistent_workers=True,
+        )
         # ---------------- model + loss + opt -------------------------
         self.model = SphereClassifier(cfg.codec_dim).to(self.device)
 
-        self.triplet = nn.TripletMarginLoss(margin=margin, p=2)
+        self.triplet = nn.TripletMarginWithDistanceLoss(
+                        distance_function=lambda x,y: 1 - F.cosine_similarity(x,y),
+                        margin=0.3)
         self.opt      = optim.Adam(
             self.model.parameters(), lr=cfg.learning_rate,
         )
-
-        self.aug = SVDRotationAugmenter(train_codecs.shape[1], epsilon=0.1)
 
         # ---------------- logging & checkpoints ----------------------
         run_id = getattr(cfg, "run_id", datetime.now().strftime("%Y%m%d-%H%M%S"))
@@ -397,26 +397,24 @@ class RotationTripletTrainer:
         self.bad_epochs = 0
 
     # ----------------------------------------------------------------
-    def _make_triplet(self, z: torch.Tensor):
-        R, P = self.aug.generate_pair(self.device)
-        pos = (R @ z.T).T
-        neg = (P @ z.T).T
-        return z, pos, neg
-
-    # ----------------------------------------------------------------
-    def _epoch(self, loader, train: bool):
+    def _epoch(self, loader, aug_loader, train: bool):
         self.model.train(train)
         losses = 0.0
-        for data in tqdm(loader, leave=False):
-            anchor = data[0].to(self.device)
-            a, p, n = self._make_triplet(anchor)
+        for data, (R, P) in tqdm(zip(loader, aug_loader), leave=False):
+            c = data[0]
+            R = R.to(self.device)
+            P = P.to(self.device)
+            z = c.unsqueeze(-1).to(self.device)
+            # print("matrices:", R.shape, P.shape, z.shape)
+            pos = torch.bmm(R, z).squeeze()
+            neg = torch.bmm(P, z).squeeze()
+            anc = z.clone().squeeze()
 
-            s_a = self.model(a).unsqueeze(1)   # shape [B,1]
-            s_p = self.model(p).unsqueeze(1)
-            s_n = self.model(n).unsqueeze(1)
+            s_a = self.model(anc).squeeze()
+            s_p = self.model(pos).squeeze()
+            s_n = self.model(neg).squeeze()
 
-            loss = contrastive_loss_fn(s_a, s_p, torch.tensor(0.0), torch.tensor(0.5))
-            loss += contrastive_loss_fn(s_a, s_n, torch.tensor(1.0), torch.tensor(0.5))
+            loss = self.triplet(s_a, s_p, s_n)
 
             if train:
                 self.opt.zero_grad(set_to_none=True)
@@ -430,8 +428,8 @@ class RotationTripletTrainer:
     # ----------------------------------------------------------------
     def fit(self):
         for epoch in range(self.cfg.num_epochs):
-            train_loss = self._epoch(self.train_loader, train=True)
-            val_loss   = self._epoch(self.val_loader,   train=False)
+            train_loss = self._epoch(self.train_loader, self.aug_loader, train=True)
+            val_loss   = self._epoch(self.val_loader, self.aug_loader, train=False)
 
             self.writer.add_scalar("Loss/Train", train_loss, epoch)
             self.writer.add_scalar("Loss/Val",   val_loss,   epoch)

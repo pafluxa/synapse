@@ -21,6 +21,8 @@ from sklearn.preprocessing import MinMaxScaler, OrdinalEncoder
 from torch.utils.data import IterableDataset
 from sklearn.model_selection import train_test_split
 
+from scipy.stats import special_ortho_group
+
 from synapse.types.torch import (
     FloatTensor,
     LongTensor,
@@ -282,3 +284,78 @@ class CSVInferenceDataset(CSVDataset):
 
         for x_num, x_cat, y in zip(self.numerical, self.categorical, self.labels):
          yield x_num, x_cat, y   # parent gives the features
+
+class RotationPairDataset(IterableDataset):
+    """
+    IterableDataset that *streams* (R, P) matrices where
+
+        R : true rotation      shape [D, D]
+        P : perturbed rotation shape [D, D]
+
+    One item  ==  one **pair** (not a batch). Let DataLoader’s
+    `batch_size` collate them into [B, D, D].
+
+    Parameters
+    ----------
+    dim            : int         – matrix dimension (D)
+    n_samples      : int | None  – total samples (None = infinite)
+    epsilon        : float       – perturb noise factor
+    min_singular   : float
+    max_singular   : float
+    device         : 'cpu' | 'cuda' | torch.device
+    """
+    def __init__(
+        self,
+        dim: int,
+        n_samples: int | None = None,
+        epsilon: float = 0.05,
+        min_singular: float = 0.01,
+        max_singular: float = 10.0,
+        device: str | torch.device = "cpu",
+    ):
+        super().__init__()
+        self.dim = dim
+        self.n_samples = n_samples
+        self.epsilon = epsilon
+        self.min_sv = min_singular
+        self.max_sv = max_singular
+        self.device = torch.device(device)
+
+    def _random_rotation(self) -> torch.Tensor:
+        R = torch.from_numpy(special_ortho_group.rvs(self.dim)).float()
+        return R
+
+    def _perturb(self, R: torch.Tensor) -> torch.Tensor:
+        U, S, Vh = torch.linalg.svd(R)
+        S = torch.clamp(S * (1 + torch.randn_like(S) * self.epsilon),
+                        self.min_sv, self.max_sv)
+        return (U @ torch.diag(S) @ Vh)
+
+    # ---------------------------------------------------------------
+    def __iter__(self) -> Iterator[Tuple[torch.Tensor, torch.Tensor]]:
+        """
+        Each worker gets its own iterator with a disjoint slice.
+        Random seeds are offset by the worker id for independence.
+        """
+        worker_info = torch.utils.data.get_worker_info()
+        if worker_info is None:                      # single-process
+            start, step = 0, 1
+        else:                                        # multi-worker
+            start = worker_info.id
+            step = worker_info.num_workers
+            # modify RNG seed for NumPy & Torch
+            np.random.seed(np.random.get_state()[1][0] + worker_info.id)
+            torch.manual_seed(torch.initial_seed() + worker_info.id)
+
+        idx = start
+        produced = 0
+
+        while self.n_samples is None or produced < self.n_samples:
+            R = self._random_rotation()
+            P = self._perturb(R)
+            yield R, P
+
+            produced += 1
+            idx += step
+            if self.n_samples is not None and idx >= self.n_samples:
+                break

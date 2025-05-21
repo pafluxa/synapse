@@ -3,29 +3,29 @@
 csv_data_path: "./data/transactions/med_notfraud.csv"
 
 categorical_cols:
-  - creditLimit
-  - acqCountry
-  - merchantCountryCode
-  - merchantCategoryCode
+  # - creditLimit
+  # - acqCountry
+  # - merchantCountryCode
+  # - merchantCategoryCode
   - transactionType
   - cardPresent
   - expirationDateKeyInMatch
-  - transactionDateTime_year
-  - transactionDateTime_month
-  - transactionDateTime_day
-  - transactionDateTime_hour
-  - transactionDateTime_minute
-  - transactionDateTime_second
+  # - transactionDateTime_year
+  # - transactionDateTime_month
+  # - transactionDateTime_day
+  # - transactionDateTime_hour
+  # - transactionDateTime_minute
+  # - transactionDateTime_second
   - currentExpDate_year
   - currentExpDate_month
   - currentExpDate_day
+  - cardCVV
+  - enteredCVV
 
 numerical_cols:
   - availableMoney
   - transactionAmount
   - currentBalance
-  - cardCVV
-  - enteredCVV
 
 label_col: "isFraud"
 # ---------------------------------------------------------------------
@@ -39,7 +39,7 @@ dim_feedforward: 2048
 dropout: 0.1
 
 # encoder
-codec_dim: 3
+codec_dim: 32
 bottleneck_arch: mlp # quotes not needed for plain strings
 
 # ---------------------------------------------------------------------
