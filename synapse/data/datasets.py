@@ -262,9 +262,6 @@ class CSVInferenceDataset(CSVDataset):
         df = pd.read_csv(file_path, usecols=numerical_cols + categorical_cols)
         if label_col not in df.columns:
             raise ValueError(f"Label column '{label_col}' not found in CSV.")
-        self.labels = torch.tensor(df[label_col].values, dtype=label_dtype)
-        if len(self.labels) != len(self):
-            raise RuntimeError("Label column length mismatch with dataset.")
 
         chunk = self._clean_data(df)
         # Fit transforms
@@ -275,10 +272,13 @@ class CSVInferenceDataset(CSVDataset):
             self.scaler.transform(
                 chunk[self.numerical_cols].values)
         )
+        self.categorical_cols.remove(self.label_col)
         self.categorical = torch.LongTensor(
             self.encoder.transform(chunk[self.categorical_cols].values)
         )
-        self.labels = torch.LongTensor(chunk[[self.label_col,]].values)
+        self.labels = torch.LongTensor(
+            self.encoder.transform(chunk[[self.label_col,]].values)
+        )
 
     # -----------------------------------------------------------------
     def __iter__(self):

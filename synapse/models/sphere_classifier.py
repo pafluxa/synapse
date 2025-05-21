@@ -11,21 +11,6 @@ from scipy.stats import special_ortho_group
 
 
 # ---------------- rotation helpers -----------------------------------
-class RotationAugmenter:
-    """
-    Simple orthogonal + perturbed-orthogonal pair generator (uses SciPy).
-    """
-    def __init__(self, dim: int, epsilon: float = 0.1):
-        self.dim = dim
-        self.epsilon = epsilon
-
-    def generate_pair(self, device: str = "cuda") -> Tuple[torch.Tensor, torch.Tensor]:
-        R = torch.from_numpy(special_ortho_group.rvs(self.dim)).float().to(device)
-        P = R + torch.randn_like(R) * self.epsilon              # additive noise
-        P = P @ torch.randn(self.dim, self.dim, device=device) * 0.05
-        return R, P
-
-
 class SVDRotationAugmenter:
     """
     QR-based random rotation + SVD-controlled perturbation (heavier).
@@ -33,7 +18,7 @@ class SVDRotationAugmenter:
     def __init__(
         self,
         dim: int,
-        epsilon: float = 0.01,
+        epsilon: float = 0.001,
         min_singular: float = 0.01,
         max_singular: float = 10.0,
     ):
@@ -41,8 +26,8 @@ class SVDRotationAugmenter:
         self.min_singular, self.max_singular = min_singular, max_singular
 
     def _random_rotation(self, device):
-        q, _ = torch.linalg.qr(torch.randn(self.dim, self.dim, device=device))
-        return q
+        R = torch.from_numpy(special_ortho_group.rvs(self.dim)).float().to(device)
+        return R
 
     def _perturb(self, R):
         U, S, Vh = torch.linalg.svd(R)
@@ -78,7 +63,7 @@ class SphereClassifier(nn.Module):
         )
         self.classifier = nn.Sequential(
             nn.Linear(hidden_dim, 1),
-            nn.Sigmoid()
+            nn.Tanh()
         )
 
     # -- forward -------------------------------------------------------

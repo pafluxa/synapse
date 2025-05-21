@@ -121,6 +121,7 @@ def main(argv=None):
         header = ["prediction"] if labels is None else ["label", "prediction"]
         w.writerow(header)
         for i, p in enumerate(preds):
+            print(p, labels[i])
             row = [int(p)] if labels is None else [int(labels[i]), int(p)]
             w.writerow(row)
     print("Predictions saved to", out_path)

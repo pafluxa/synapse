@@ -162,7 +162,7 @@ class TabularBERT(nn.Module):
 
         return codec, decoded_features
 
-    def loss(self, outputs, targets, mask, w1, w2, k: torch.Tensor = torch.tensor(4)):
+    def loss(self, outputs, targets, mask, w1, w2, k: int = 4):
         z, decoded = outputs
         x_num, x_cat = targets
         # Reconstruction loss

@@ -23,6 +23,31 @@ from synapse.utils.config_parser import RunConfiguration
 from synapse.models.auto_encoders import TabularBERT, knn_entropy
 from synapse.utils.visuals import SnapshotGenerator
 
+
+# ------------------------------------------------------------------ metrics
+def binary_metrics_from_logits(logits_pred: torch.Tensor,
+                               logits_anch: torch.Tensor,
+                               threshold: float = 0.0):
+    """
+    logits : shape [N] in [-1, 1]
+    labels : {0,1} ground-truth
+    """
+    preds = (logits_pred >= threshold).long()
+    labels = (logits_anch >= threshold).long()
+
+    correct = (preds == labels).sum().item()
+    acc     = correct / len(labels)
+
+    tp = ((preds == 1) & (labels == 1)).sum().item()
+    fp = ((preds == 1) & (labels == 0)).sum().item()
+    fn = ((preds == 0) & (labels == 1)).sum().item()
+
+    precision = tp / (tp + fp + 1e-9)
+    recall    = tp / (tp + fn + 1e-9)
+    f1        = 2 * precision * recall / (precision + recall + 1e-9)
+
+    return {"accuracy": acc, "precision": precision, "recall": recall, "f1": f1}
+
 # ------------------------------------------------------------------ timers
 @contextmanager
 def timer(name: str, store: Optional[Dict[str, float]] = None):
@@ -391,7 +416,6 @@ class SphereContrastiveTrainer:
         logits_p, h_p = self.model(p)
         logits_n, h_n = self.model(n)
 
-        print(h_a[0], h_p[0], h_n[0])
         loss_trip = self.triplet(logits_a, logits_p, logits_n)
 
         loss = loss_trip
@@ -402,19 +426,22 @@ class SphereContrastiveTrainer:
             self.opt.step()
 
         with torch.no_grad():
-            acc = ((torch.sigmoid(logits_a) < 0.5).float().mean()).item()
+            metrics_p = binary_metrics_from_logits(logits_a, logits_p)
+            metrics_n = binary_metrics_from_logits(logits_a, logits_n)
 
         return {"loss": loss.item(),
                 "triplet": loss_trip.item(),
-                "bce": loss_bce.item(),
-                "acc": acc}
+                "bce": 0.0,
+                "acc_p": metrics_p['accuracy'],
+                "acc_n": metrics_n['accuracy']}
 
     # ------------ main loop ------------------------------------------
     def fit(self):
+
         for epoch in range(self.cfg.sph_num_epochs):
             # --- train ------------------------------------------------
             self.model.train()
-            train_m = {"loss":0,"triplet":0,"bce":0,"acc":0}
+            train_m = {"loss":0,"triplet":0,"acc_p":0,"acc_n":0}
             for batch in tqdm(self.train_loader, leave=False, desc=f"train {epoch}"):
                 m = self._step(batch, train=True)
                 for k in train_m: train_m[k] += m[k]
@@ -422,7 +449,7 @@ class SphereContrastiveTrainer:
 
             # --- val --------------------------------------------------
             self.model.eval()
-            val_m = {"loss":0,"triplet":0,"bce":0,"acc":0}
+            val_m = {"loss":0,"triplet":0,"acc_p":0,"acc_n":0}
             with torch.no_grad():
                 for batch in self.val_loader:
                     m = self._step(batch, train=False)
@@ -436,7 +463,10 @@ class SphereContrastiveTrainer:
 
             print(f"Epoch {epoch:03d}  "
                   f"train_loss={train_m['loss']:.4f}  "
-                  f"val_loss={val_m['loss']:.4f}")
+                  f"val_loss={val_m['loss']:.4f}  "
+                  f"val_acc (pos)={val_m['acc_p']:.2%}  "
+                  f"val_acc (neg)={val_m['acc_n']:.2%}  "
+            )
 
             # --- checkpoint & early-stop -----------------------------
             ckpt = os.path.join(self.ckpt_dir, f"epoch_{epoch}.pt")
