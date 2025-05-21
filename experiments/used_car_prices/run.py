@@ -3,7 +3,8 @@ import multiprocessing as mp
 from synapse.data.datasets import CSVDataset
 from synapse.utils.config_parser import RunConfiguration
 from synapse.training.trainers import MaskedEmbeddingTrainer
-
+from synapse.training.trainers import SphereContrastiveTrainer
+from synapse.models.auto_encoders import TabularBERT
 
 if __name__ == '__main__':
 
@@ -26,5 +27,9 @@ if __name__ == '__main__':
     )
 
     cfg.attach_dataset(train_set, val_set, test_set)
+
+    print(cfg.num_features)
     trainer = MaskedEmbeddingTrainer(cfg)
     trainer.train()
+
+    encoder = TabularBERT(cfg)

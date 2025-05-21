@@ -1,17 +1,8 @@
 # config.yaml
 # data
 csv_data_path: "./data/used_car_prices/train-data.csv"
-numerical_cols: ["Kilometers_Driven", "Mileage"]
-categorical_cols:
-  [
-    "Year",
-    "Fuel_Type",
-    "Transmission",
-    "Owner_Type",
-    "Engine",
-    "Power",
-    "Seats",
-  ]
+numerical_cols: ["Mileage", "Price"]
+categorical_cols: ["Year", "Fuel_Type", "Transmission", "Owner_Type", "Seats"]
 # Embedding configuration
 embedding_dim: 32
 
@@ -22,13 +13,13 @@ dim_feedforward: 1024
 dropout: 0.15
 
 # Encoder configuration
-codec_dim: 3
+codec_dim: 8
 bottleneck_arch: "mlp"
 
 # Training configuration
-num_workers: 4
+num_workers: 1
 batch_size: 128
 num_epochs: 1000
 learning_rate: 0.0001
-weight_decay: 1e-10
+weight_decay: 1e-8
 mask_prob: 0.125

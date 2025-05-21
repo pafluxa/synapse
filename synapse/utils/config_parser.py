@@ -1,81 +1,132 @@
 # config/config_parser.py
+"""
+Lightweight dataclass-based configuration parser
+===============================================
+
+• Loads a YAML into a `RunConfiguration` instance.
+• Generates a unique run-ID if none provided.
+• Provides `attach_dataset()` to enrich the config once
+  the CSV splits are ready.
+
+NOTE: keep this module import-light so that loading the YAML
+doesn't trigger heavy dependencies.
+"""
+from __future__ import annotations
+
 import random
 import string
 from dataclasses import dataclass, field
-from typing import Any, List
+from pathlib import Path
+from typing import Any, List, Tuple
+
 import yaml
 
 from synapse.data.datasets import CSVDataset
 
-def generate_run_id(length: int = 8) -> str:
-    """
-    Generates a random alphanumeric (A-Z, 0-9) string of given length.
-    Default length is 8 characters.
-    """
+# --------------------------------------------------------------------- #
+#  helper factories
+# --------------------------------------------------------------------- #
+def _generate_run_id(length: int = 8) -> str:
+    """Random uppercase + digit string, e.g. '4F7C9K2M'."""
     chars = string.ascii_uppercase + string.digits
-    return ''.join(random.choices(chars, k=length))
+    return "".join(random.choices(chars, k=length))
 
+
+def _default_ranges() -> List[Tuple[float, float]]:
+    """Dummy (0-1) numerical min/max for when dataset not attached yet."""
+    return []
+
+
+# --------------------------------------------------------------------- #
+#  main dataclass
+# --------------------------------------------------------------------- #
 @dataclass
 class RunConfiguration:
-    # Data-related
-    csv_data_path: str = ''
-    train_fraction: float = 0.7
-    test_fraction: float = 0.2
-    val_fraction: float = 0.1
-    training_dataset: Any = None
-    testing_dataset: Any = None
-    validation_dataset: Any = None
+    # ————————————————————————————————— DATA ————————————————————————————
+    csv_data_path: str
+    test_fraction: float
+    val_fraction: float
+
+    numerical_cols: List[str]
+    categorical_cols: List[str]
+    label_col: str
+    # ———————————————————————————— TRAINING ————————————————————————————
+    num_workers: int
+    batch_size: int
+    num_epochs: int
+    sph_num_epochs: int
+    learning_rate: float
+    weight_decay: float
+    mask_prob: float
+
+    # —————————————————————————— ARCHITECTURE ——————————————————————————
+    embedding_dim: int
+    num_heads: int
+    num_layers: int
+    dim_feedforward: int
+    dropout: float
+    codec_dim: int
+    hidden_dim: int
+    hidden_dim: int # embedding size inside SphereClassifier
+    lambda_bce: float # weight for BCE term
+    patience: int
+    bottleneck_arch: str
+
+    # —————————————————————————— MISC / LOGGING ——————————————————————————
+    viz_dir: str = "./snapshots"
+    run_id: str = field(default_factory=_generate_run_id)
+
+    # ————————————————— INTERNAL (filled by attach_dataset) ——————————
+    training_dataset: Any | None = None
+    validation_dataset: Any | None = None
+    testing_dataset: Any | None = None
 
     num_numerical: int = 0
-    numerical_cols: List[str] = field(default_factory=list[str])
+    numerical_ranges: List[Tuple[float, float]] = field(default_factory=_default_ranges)
+    numerical_depths: List[int] = field(default_factory=list)
 
-    categorical_cols: List[str] = field(default_factory=list[str])
-    categorical_dims: List[int] = field(default_factory=list[int])
     num_categorical: int = 0
+    categorical_dims: List[int] = field(default_factory=list)
 
     num_features: int = 0
     num_samples: int = 0
 
-    # Embedding
-    embedding_dim: int = 32
-
-    # Transformer
-    num_heads: int = 4
-    num_layers: int = 4
-    dim_feedforward: int = 1024
-    dropout: float = 0.15
-
-    # Encoder
-    codec_dim: int = 3
-    bottleneck_arch: str = "mlp"
-
-    # Training
-    num_workers: int = 4
-    batch_size: int = 128
-    num_epochs: int = 1000
-    learning_rate: float = 1e-4
-    weight_decay: float = 1e-10
-    mask_prob: float = 0.125
-    run_id: str = field(default_factory=generate_run_id)
-    viz_dir: str = "./snapshots"
-
+    # -----------------------------------------------------------------
+    # factory
+    # -----------------------------------------------------------------
     @classmethod
-    def from_yaml(cls, yaml_path: str) -> "RunConfiguration":
-        with open(yaml_path, 'r') as f:
-            data = yaml.safe_load(f)
+    def from_yaml(cls, path: str | Path) -> "RunConfiguration":
+        path = Path(path)
+        if not path.exists():
+            raise FileNotFoundError(path)
+        with path.open("r") as f:
+            data = yaml.safe_load(f) or {}
         return cls(**data)
 
-    def attach_dataset(self,
+    # -----------------------------------------------------------------
+    # to be called *after* you build the dataset splits
+    # -----------------------------------------------------------------
+    def attach_dataset(
+        self,
         train_ds: CSVDataset,
+        val_ds: CSVDataset,
         test_ds: CSVDataset,
-        val_ds: CSVDataset):
-
+        default_depth: int = 8,
+    ) -> None:
+        """Populate fields that depend on the concrete datasets."""
         self.training_dataset = train_ds
-        self.testing_dataset = test_ds
         self.validation_dataset = val_ds
+        self.testing_dataset = test_ds
 
+        # numerical
         self.num_numerical = len(train_ds.numerical_cols)
-        self.categorical_dims = [c for c in train_ds.cardinalities]
+        self.numerical_ranges = [(0.0, 1.0)] * self.num_numerical
+        self.numerical_depths = [default_depth] * self.num_numerical
+
+        # categorical
+        self.categorical_dims = list(train_ds.cardinalities)
         self.num_categorical = len(self.categorical_dims)
-        self.seq_len = self.num_numerical + self.num_categorical
+
+        # totals
+        self.num_features = self.num_numerical + self.num_categorical
         self.num_samples = len(train_ds)

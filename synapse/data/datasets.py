@@ -4,8 +4,11 @@ This module provides a CSVDataset class that handles both numerical and categori
 features with proper scaling and encoding. The dataset supports lazy loading and
 multi-worker processing.
 """
+from __future__ import annotations
 
 import copy
+from pathlib import Path
+
 from typing import (
     Dict, List, Optional, Tuple, Union, Iterator,
     Sequence, Any, Iterable
@@ -139,7 +142,7 @@ class CSVDataset(IterableDataset):
         )
 
         # Fit transforms
-        self._fit_transforms(train_df)
+        self._fit_transforms(main_df)
 
         # Create datasets with pre-computed row indices
         datasets = []
@@ -220,3 +223,65 @@ class CSVDataset(IterableDataset):
     def cardinalities(self) -> List[int]:
         """Alias for categorical_dims."""
         return self.categorical_dims
+
+
+class CSVInferenceDataset(CSVDataset):
+    """
+    Same as CSVDataset but yields **(x_num, x_cat, label)**.
+
+    Parameters
+    ----------
+    file_path        : str | Path
+    numerical_cols   : list[str]
+    categorical_cols : list[str]
+    label_col        : str                 – column name with ground-truth (0/1)
+    max_workers      : int                 – passed to parent constructor
+    label_dtype      : torch.dtype         – default torch.long
+    """
+
+    def __init__(
+        self,
+        file_path: str | Path,
+        numerical_cols: List[str],
+        categorical_cols: List[str],
+        label_col: str,
+        max_workers: int = 1,
+        label_dtype: torch.dtype = torch.long,
+    ) -> None:
+        # build everything the parent needs
+        super().__init__(
+            file_path=file_path,
+            numerical_cols=numerical_cols,
+            categorical_cols=categorical_cols,
+            max_workers=max_workers,
+        )
+
+        self.label_col = label_col
+        # read the single label column once (cheap compared to full preprocessing)
+        categorical_cols.append(label_col)
+        df = pd.read_csv(file_path, usecols=numerical_cols + categorical_cols)
+        if label_col not in df.columns:
+            raise ValueError(f"Label column '{label_col}' not found in CSV.")
+        self.labels = torch.tensor(df[label_col].values, dtype=label_dtype)
+        if len(self.labels) != len(self):
+            raise RuntimeError("Label column length mismatch with dataset.")
+
+        chunk = self._clean_data(df)
+        # Fit transforms
+        self._fit_transforms(chunk)
+
+        # Batch transform
+        self.numerical = torch.FloatTensor(
+            self.scaler.transform(
+                chunk[self.numerical_cols].values)
+        )
+        self.categorical = torch.LongTensor(
+            self.encoder.transform(chunk[self.categorical_cols].values)
+        )
+        self.labels = torch.LongTensor(chunk[[self.label_col,]].values)
+
+    # -----------------------------------------------------------------
+    def __iter__(self):
+
+        for x_num, x_cat, y in zip(self.numerical, self.categorical, self.labels):
+         yield x_num, x_cat, y   # parent gives the features

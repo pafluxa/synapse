@@ -1,0 +1,65 @@
+# ---------------------------------------------------------------------
+# data
+csv_data_path: "./data/transactions/small_nofraud.csv"
+
+categorical_cols:
+  - creditLimit
+  - acqCountry
+  - merchantCountryCode
+  - merchantCategoryCode
+  - transactionType
+  - cardPresent
+  - expirationDateKeyInMatch
+  - transactionDateTime_year
+  - transactionDateTime_month
+  - transactionDateTime_day
+  - transactionDateTime_hour
+  - transactionDateTime_minute
+  - transactionDateTime_second
+  - currentExpDate_year
+  - currentExpDate_month
+  - currentExpDate_day
+  - cardCVV
+  - enteredCVV
+  - cardLast4Digits
+
+numerical_cols:
+  - availableMoney
+  - transactionAmount
+  - currentBalance
+
+label_col: "isFraud"
+# ---------------------------------------------------------------------
+# embedding
+embedding_dim: 32
+
+# transformer
+num_heads: 4
+num_layers: 4
+dim_feedforward: 1024
+dropout: 0.15
+
+# encoder
+codec_dim: 3
+bottleneck_arch: mlp # quotes not needed for plain strings
+
+# ---------------------------------------------------------------------
+# dataset split (train fraction is implicit)
+test_fraction: 0.2
+val_fraction: 0.1
+
+# ---------------------------------------------------------------------
+# training
+num_workers: 1
+batch_size: 512
+num_epochs: 50
+sph_num_epochs: 100
+learning_rate: 0.0001
+weight_decay: 1e-8
+mask_prob: 0.125
+
+# ---------------------------------------------------------------------
+# sphere-classifier
+hidden_dim: 128 # embedding size inside SphereClassifier
+lambda_bce: 1.0 # weight for BCE term
+patience: 10

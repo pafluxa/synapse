@@ -55,6 +55,8 @@ class SnapshotGenerator:
             proc.daemon = True
             proc.start()
 
+        return self.reader_procs
+
     def stop(self):
 
         # Wait for the visualization engine to finish
@@ -105,13 +107,14 @@ class SnapshotGenerator:
 
         # 1. Plot codec norms distribution
         plt.subplot(2, 2, 1)
-        plt.hist(norms / avg_norm, bins=100, alpha=0.7, color='blue', label='Codec Norms', histtype='barstacked')
+        bins = np.linspace(0, 2, 100)
+        plt.hist(norms / avg_norm, bins=bins, alpha=0.7, color='blue', label='Codec Norms', histtype='barstacked')
         plt.title(f'Epoch {epoch}: Codec Norms Distribution\n'
                  f'Mean: {norms.mean():.4f}, Var: {norms.var():.6f}')
-        plt.xlabel('Norm (normalized to max)')
+        plt.xlabel('Norm (normalized to average norm)')
         plt.ylabel('Frequency')
-        plt.xlim(0.0, 5.0)
-        plt.ylim(0, points.shape[0]//5)
+        plt.xlim(0.0, 2.0)
+        plt.ylim(0, points.shape[0])
         # plt.yscale('log')
         plt.legend()
 
@@ -130,14 +133,14 @@ class SnapshotGenerator:
             z = r1 * np.cos(v)
             ax.plot_wireframe(x, y, z, color="r", alpha=0.1, label="reference")
 
-            r = (avg_norm ** 0.5) * 1.05
+            r = (avg_norm ** 0.5) * 1.02
             ax.quiver(-r, 0, 0, 2 * r, 0, 0, color='k', arrow_length_ratio=0.05) # x-axis
             ax.quiver(0, -r, 0, 0, 2 * r, 0, color='k', arrow_length_ratio=0.05) # y-axis
             ax.quiver(0, 0, -r, 0, 0, 2 * r, color='k', arrow_length_ratio=0.05) # z-axis
 
-            ax.set_xlim(-(avg_norm ** 0.5) * 1.5, (avg_norm ** 0.5) * 1.5)
-            ax.set_ylim(-(avg_norm ** 0.5) * 1.5, (avg_norm ** 0.5) * 1.5)
-            ax.set_zlim(-(avg_norm ** 0.5) * 1.5, (avg_norm ** 0.5) * 1.5)
+            ax.set_xlim(-(avg_norm ** 0.5) * 1.1, (avg_norm ** 0.5) * 1.1)
+            ax.set_ylim(-(avg_norm ** 0.5) * 1.1, (avg_norm ** 0.5) * 1.1)
+            ax.set_zlim(-(avg_norm ** 0.5) * 1.1, (avg_norm ** 0.5) * 1.1)
 
             plt.title(f'First 3 Dimensions of Codecs\n(Total dim: {codecs.shape[1]})')
 
@@ -175,13 +178,13 @@ class SnapshotGenerator:
         epochs = list(range(len(history)))
         plt.plot(epochs, [h['loss'] for h in history], label='loss')
         plt.plot(epochs, [h['mse_loss'] for h in history], label='MSE')
-        plt.plot(epochs, [h['sph_rad'] for h in history], label='radial')
-        plt.plot(epochs, [h['sph_uni'] for h in history], label='repulsion')
+        plt.plot(epochs, [h['sph_rad'] for h in history], label='sph. deviation')
+        plt.plot(epochs, [h['sph_uni'] for h in history], label='uniformity')
         plt.plot(epochs, [h['mean_norm'] for h in history], label='avg. norm')
         plt.title('Training Progress')
         plt.xlabel('Epoch')
         plt.legend()
-        ax.set_ylim(1E-3, 2.5E3)
+        ax.set_ylim(1E-5, 1E3)
         ax.set_xlim(0, num_epochs)
         ax.set_yscale('log')
 
