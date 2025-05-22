@@ -159,8 +159,10 @@ class MaskedTransformerAutoencoder(nn.Module):
             mask = (rand < p)
         masked_emb = emb.clone()
         random_noise = torch.randn_like(emb, device=emb.device)
+        # mask is random noise
         masked_emb[mask, :] = random_noise[mask, :]
-
+        # recover padding
+        masked_emb[emb == 0.0] = 0.0
         # ---------- transformer ----------
         memory = self.encoder(masked_emb)
         hidden = self.decoder(emb, memory)
@@ -170,7 +172,7 @@ class MaskedTransformerAutoencoder(nn.Module):
 
         # loss = ce_loss + 0.1 * mse_loss
         emb_avg_norm = torch.mean(torch.norm(emb, dim=-1, p=2)).detach()
-        loss = F.mse_loss(emb[~mask, :], recon[~mask, :]) + 0.01 * torch.mean((torch.norm(emb, dim=-1, p=2) - emb_avg_norm)**2)
+        loss = F.mse_loss(recon, emb) + 0.01 * torch.mean((torch.norm(emb, dim=-1, p=2) - emb_avg_norm)**2)
 
         metrics = {
             "loss": float(loss.detach()),
