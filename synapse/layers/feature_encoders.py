@@ -15,7 +15,7 @@ import torch.nn as nn
 from torch.nn.utils.rnn import pad_sequence
 
 
-class Zwei(nn.Module):
+class NumericalFeatureEncoder(nn.Module):
     """Vectorized binary encoder with padding to max depth.
 
     This encoder converts numerical features into binary tokens using a binary search
@@ -46,18 +46,18 @@ class Zwei(nn.Module):
         """
         super().__init__()
 
-        self.min_emb_dim_ = max([0, min(max_depths)])
-        self.max_emb_dim_ = max([0, max(max_depths)])
+        self.min_emb_dim_: int = max([0, min(max_depths)])
+        self.max_emb_dim_: int = max([0, max(max_depths)])
 
         # Convert to tensors
-        self.feature_ranges = torch.tensor(feature_ranges, dtype=torch.float32)
-        self.n_features = len(list(feature_ranges))
-        self.max_depths = torch.tensor(max_depths, dtype=torch.long)
+        self.feature_ranges: torch.Tensor = torch.tensor(feature_ranges, dtype=torch.float32)
+        self.n_features: int = len(list(feature_ranges))
+        self.max_depths: torch.Tensor = torch.tensor(max_depths, dtype=torch.long)
 
         # Determine padding
-        self.max_depth = self.max_depths.max().item()
-        self.total_tokens = self.n_features * self.max_depth
-        self.padval_ = -100
+        self.max_depth: int = int(self.max_depths.max().item())
+        self.total_tokens: int = self.n_features * self.max_depth
+        self.padval_: int = -1
 
         # Register buffers
         self.register_buffer('depth_mask', self._create_depth_mask())
@@ -119,7 +119,5 @@ class Zwei(nn.Module):
             # Update bounds
             lows = torch.where(active_mask & (decisions == 1), mids, lows)
             highs = torch.where(active_mask & (decisions == 0), mids, highs)
-
-        tokens = tokens.long()
 
         return tokens

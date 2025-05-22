@@ -179,27 +179,27 @@ class _ResBlock(nn.Module):
     def forward(self, x):
         out = F.leaky_relu(self.bn1(self.conv1(x)))
         out = self.bn2(self.conv2(out))
-        return F.leaky_relu(out + x)            # residual add
+        return F.leaky_relu(out) + x
 
 
-class RotationConvNet(nn.Module):
+class ResidualConvNet(nn.Module):
     """
     Deeper 1-D CNN backbone → global pooling → FC head.
 
     depth = 3 * n_blocks  (default 9 convs)
     """
-    def __init__(self, in_dim: int, embed_dim: int = 8, width: int = 8, n_blocks: int = 4):
+    def __init__(self, in_dim: int, width: int = 128, n_blocks: int = 6):
         super().__init__()
 
         # Stem: expand channels once
         self.stem = nn.Sequential(
             nn.Conv1d(in_dim, width, kernel_size=7, padding=3),
             nn.BatchNorm1d(width),
-            nn.LeakyReLU(inplace=True),
+            nn.ReLU(inplace=True),
         )
 
         # Stack residual blocks with increasing dilation
-        blocks = []
+        blocks: List[nn.Module] = []
         for i in range(n_blocks):
             k = 3 if i % 2 == 0 else 5               # alternate kernel sizes
             d = 2 ** (i % 3)                         # 1,2,4 dilations cycle
@@ -207,13 +207,14 @@ class RotationConvNet(nn.Module):
         self.backbone = nn.Sequential(*blocks)
 
         # Global average over sequence length (D)
-        self.pool = nn.AdaptiveMaxPool1d(1)
+        self.pool = nn.AdaptiveAvgPool1d(1)
 
         # Projection to embedding
         self.head = nn.Sequential(
             nn.Linear(width, width),
-            nn.LeakyReLU(inplace=True),
-            nn.Linear(width, embed_dim),
+            nn.ReLU(inplace=True),
+            nn.Linear(width, 1),
+            nn.Sigmoid()
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -221,5 +222,4 @@ class RotationConvNet(nn.Module):
         h = self.backbone(h)
         h = self.pool(h).squeeze(-1)       # [B, width]
         z = self.head(h)
-        z = F.normalize(z, p=2, dim=1)     # unit sphere embedding
         return z

@@ -13,7 +13,7 @@ from einops import rearrange
 from synapse.utils.config_parser import RunConfiguration
 from synapse.layers.embeddings import CategoricalEmbedding
 from synapse.layers.embeddings import NumericalEmbedding
-from synapse.layers.feature_encoders import Zwei
+from synapse.layers.feature_encoders import NumericalFeatureEncoder as Zwei
 
 
 def _spherical_cap_area(cos_phi: torch.Tensor,
@@ -199,11 +199,11 @@ class TabularBERT(nn.Module):
         # ul = torch.mean(cos_sim[mask])
         uniformity_loss = torch.nn.functional.softplus(-knn_entropy(z_unit, k))
 
-        total_loss = mse + w1 * spherical_loss + w2 * uniformity_loss
+        total_loss = mse + 0.1 * spherical_loss + 0.0001 * uniformity_loss
         metrics['loss'] = total_loss.item()
         metrics['mse_loss'] = mse.item()
-        metrics['sph_rad'] = (w1 * spherical_loss).item()
-        metrics['sph_uni'] = (w2 * uniformity_loss).item()
+        metrics['sph_rad'] = (0.1 * spherical_loss).item()
+        metrics['sph_uni'] = (0.0001 * uniformity_loss).item()
         metrics['var_norm'] = var_norm.item()
         metrics['mean_norm'] = avg_norm.item()
 

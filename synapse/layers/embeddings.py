@@ -13,8 +13,10 @@ import math
 from typing import List, Tuple, Optional
 
 from einops import rearrange
+
 import torch
 from torch import nn
+from torch.nn import functional as F
 from torch.nn.utils.rnn import pad_sequence
 
 
@@ -190,3 +192,132 @@ class NumericalEmbedding(nn.Module):
             embeddings.append(prj)
 
         return torch.stack(embeddings)
+
+
+class NumericalFeatureEmbedding(nn.Module):
+    """Project each **scalar** numerical feature independently to a common
+    embedding dimension using a small 1‑layer *MLP* (here just ``nn.Linear``).
+
+    Parameters
+    ----------
+    num_features : int
+        How many distinct numerical columns the table contains.
+    emb_dim : int
+        Size of the vector produced for **every** numerical feature.
+    """
+
+    def __init__(self, num_features: int, emb_dim: int):
+        super().__init__()
+        self.num_features = num_features
+        self.emb_dim = emb_dim
+
+        # A separate linear projection per column → shape (B, 1) → (B, D)
+        self.proj = nn.ModuleList(
+            [
+                nn.Sequential(
+                    nn.Linear(1, emb_dim, bias=False),
+                    nn.LayerNorm(emb_dim)
+                ) for _ in range(num_features)
+            ]
+        )
+
+    def forward(self, x_num: torch.Tensor) -> torch.Tensor:  # (B, N)
+        if x_num.ndim != 2 or x_num.size(1) != self.num_features:
+            raise ValueError(
+                f"Expected x_num of shape (B, {self.num_features}); got {tuple(x_num.shape)}"
+            )
+        outs = []
+        for j, linear in enumerate(self.proj):
+            col = x_num[:, j].unsqueeze(-1)  # (B, 1)
+            outs.append(linear(col))   # (B, D)
+        return torch.stack(outs, dim=1)  # (B, N, D)
+
+
+class CategoricalFeatureEmbedding(nn.Module):
+    """Embed each categorical column with its **own** dimensionality
+    ``d_j = ⌈0.5 · √C_j⌉`` then *left‑pad* with zeros so every returned vector
+    has the same final size ``max(d_j)``.
+    """
+
+    def __init__(self, cardinalities: List[int]):
+        super().__init__()
+        if not cardinalities:
+            raise ValueError("cardinalities list must not be empty")
+
+        self.cardinalities = list(cardinalities)
+        self.dims = [max(1, int(round(0.5 * math.sqrt(c)))) for c in self.cardinalities]
+        self.max_dim = max(self.dims)
+
+        self.embeddings = nn.ModuleList(
+            [
+                nn.Sequential(
+                    nn.Embedding(C, d),
+                    nn.LayerNorm(d)
+                ) for C, d in zip(self.cardinalities, self.dims)
+            ]
+        )
+
+    def forward(self, x_cat: torch.Tensor) -> torch.Tensor:  # (B, M)
+        if x_cat.ndim != 2 or x_cat.size(1) != len(self.cardinalities):
+            raise ValueError(
+                f"Expected x_cat of shape (B, {len(self.cardinalities)}); got {tuple(x_cat.shape)}"
+            )
+        outs = []
+        for j, (emb, d_j) in enumerate(zip(self.embeddings, self.dims)):
+            v = emb(x_cat[:, j])                 # (B, d_j)
+            if d_j < self.max_dim:               # pad on the *right*
+                pad = (0, self.max_dim - d_j)    # (left, right)
+                v = F.pad(v, pad, value=0.0)
+            outs.append(v)
+        return torch.stack(outs, dim=1)  # (B, M, max_dim)
+
+
+class MixedFeatureEmbedding(nn.Module):
+    """Combine numerical + categorical embeddings into a single tensor of
+    uniform width ``D`` ready for a Transformer or MLP‑Mixer.
+
+    Parameters
+    ----------
+    num_numerical : int
+        Number of scalar numerical columns.
+    cat_cardinalities : list[int]
+        Cardinalities *per* categorical column.
+    numerical_dim : int | None, default ``None``
+        If ``None`` we use the same *final* dimension as the categorical block
+        (``max_dim``).  Otherwise we project every numerical feature to this
+        size **and** pad/truncate categorical vectors to match.
+    """
+
+    def __init__(
+        self,
+        num_numerical: int,
+        cat_cardinalities: List[int],
+        numerical_dim: int | None = None,
+    ):
+        super().__init__()
+
+        self.cat_block = CategoricalFeatureEmbedding(cat_cardinalities)
+
+        # Decide the final common dimension D
+        self.emb_dim = max(self.cat_block.max_dim, numerical_dim or 0)
+        if numerical_dim is not None and numerical_dim != self.emb_dim:
+            # We will *pad* cat vectors up to numerical_dim
+            self.emb_dim = numerical_dim
+
+        self.num_block = NumericalFeatureEmbedding(num_numerical, self.emb_dim)
+
+    # ------------------------------------------------------------------
+    def forward(self, x_num: torch.Tensor, x_cat: torch.Tensor) -> torch.Tensor:
+        """Return shape **(B, num_numerical + num_categorical, D)**."""
+        num_vecs = self.num_block(x_num)               # (B, N, D)
+        cat_vecs = self.cat_block(x_cat)               # (B, M, d*)
+
+        # Pad categorical side if needed
+        d_cat = cat_vecs.size(-1)
+        if d_cat < self.emb_dim:
+            pad = (0, self.emb_dim - d_cat)
+            cat_vecs = F.pad(cat_vecs, pad, value=0.0)
+        elif d_cat > self.emb_dim:
+            cat_vecs = cat_vecs[..., : self.emb_dim]   # truncate (rare)
+
+        return torch.cat([num_vecs, cat_vecs], dim=1)  # (B, N+M, D)

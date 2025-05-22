@@ -7,6 +7,7 @@ multi-worker processing.
 from __future__ import annotations
 
 import copy
+import random
 from pathlib import Path
 
 from typing import (
@@ -20,6 +21,7 @@ import numpy as np
 from sklearn.preprocessing import MinMaxScaler, OrdinalEncoder
 from torch.utils.data import IterableDataset
 from sklearn.model_selection import train_test_split
+from sklearn.model_selection import StratifiedShuffleSplit
 
 from scipy.stats import special_ortho_group
 
@@ -70,11 +72,11 @@ class CSVDataset(IterableDataset):
         )
         self._fitted = False
         self._categorical_cardinalities: Dict[str, int] = {}
-
+        self.label_col: str | None = None
         # Calculate length without loading full CSV
         with open(self.csv_path) as f:
             self.num_samples = sum(1 for _ in f) - 1  # Subtract header
-        self.row_indices = np.arange(self.num_samples)
+        self.row_indices: List[int] = np.arange(self.num_samples).tolist()
 
     def _clean_data(self, df: pd.DataFrame) -> pd.DataFrame:
         """Clean a DataFrame chunk by removing NA values and selecting columns.
@@ -85,7 +87,11 @@ class CSVDataset(IterableDataset):
         Returns:
             Cleaned DataFrame with only selected columns and no NA values
         """
-        cols = set(self.numerical_cols + list(self.categorical_cols))
+        if self.label_col is None:
+            cols = set(self.numerical_cols + list(self.categorical_cols))
+        else:
+            cols = set(self.numerical_cols + list(self.categorical_cols) + [self.label_col,])
+
         return df[list(cols)].dropna()
 
     def _fit_transforms(self, train_df: pd.DataFrame) -> None:
@@ -147,7 +153,7 @@ class CSVDataset(IterableDataset):
         self._fit_transforms(main_df)
 
         # Create datasets with pre-computed row indices
-        datasets = []
+        datasets: List[CSVDataset] = []
         for df in [train_df, val_df, test_df]:
             dataset = CSVDataset.__new__(CSVDataset)
             dataset.csv_path = self.csv_path
@@ -160,6 +166,7 @@ class CSVDataset(IterableDataset):
             dataset._categorical_cardinalities = self._categorical_cardinalities
             dataset.row_indices = df.index.tolist()  # Store row indices
             dataset.num_samples = len(df)
+            dataset.label_col = self.label_col
             datasets.append(dataset)
 
         return tuple(datasets)  # type: ignore
@@ -204,7 +211,8 @@ class CSVDataset(IterableDataset):
                 self.encoder.transform(chunk[self.categorical_cols].values)
             )
 
-            for i in range(len(chunk)):
+            idx = list(range(len(chunk)))
+            for i in idx:
                 yield numerical[i], categorical[i]
 
     @property
@@ -227,7 +235,7 @@ class CSVDataset(IterableDataset):
         return self.categorical_dims
 
 
-class CSVInferenceDataset(CSVDataset):
+class CSVLabeledDataset(CSVDataset):
     """
     Same as CSVDataset but yields **(x_num, x_cat, label)**.
 
@@ -260,30 +268,256 @@ class CSVInferenceDataset(CSVDataset):
 
         self.label_col = label_col
         # read the single label column once (cheap compared to full preprocessing)
-        df = pd.read_csv(file_path, usecols=self.numerical_cols + self.categorical_cols + [self.label_col,])
-        if label_col not in df.columns:
+        cols = self.numerical_cols + self.categorical_cols + [self.label_col,]
+        self.df: pd.DataFrame = pd.read_csv(file_path, usecols=cols)
+        if label_col not in self.df.columns:
             raise ValueError(f"Label column '{label_col}' not found in CSV.")
 
-        chunk = self._clean_data(df)
+    def prepare_splits(
+        self,
+        test_size: float = 0.1,
+        val_size: float = 0.1,
+        random_state: Optional[int] = 42
+    ) -> Tuple['CSVDataset', 'CSVDataset', 'CSVDataset']:
+        """Prepare train/validation/test splits.
+
+        Args:
+            test_size: Fraction of data to use for test set
+            val_size: Fraction of data to use for validation set
+            random_state: Random seed for reproducibility
+
+        Returns:
+            Tuple of (train_dataset, val_dataset, test_dataset)
+        """
+        # Read and clean training data only for fitting
+        main_df = self._clean_data(self.df)
+
+        # Split data
+        sss = StratifiedShuffleSplit(
+            n_splits=1,
+            test_size=(test_size + val_size),
+            random_state=0
+        )
+        (train_index, test_val_index) = next(sss.split(main_df[self.numerical_cols + self.categorical_cols], main_df[[self.label_col]]))
+        train_df = main_df.loc[train_index, :].reset_index(drop=True)
+        test_val_df = main_df.loc[test_val_index, :].reset_index(drop=True)
+        # train_df, test_val_df = train_test_split(
+        #     main_df,
+        #     test_size=(test_size + val_size),
+        #     random_state=random_state,
+        #     stratify=[self.label_col,]
+        # )
+        sss = StratifiedShuffleSplit(
+            n_splits=1,
+            test_size=val_size/(test_size + val_size),
+            random_state=0
+        )
+        (test_index, val_index) = next(sss.split(test_val_df[self.numerical_cols + self.categorical_cols], test_val_df[[self.label_col]]))
+        test_df = test_val_df.loc[test_index, :].reset_index(drop=True)
+        val_df = test_val_df.loc[val_index, :].reset_index(drop=True)
+        # train_test_split(
+        #     test_val_df,
+        #     test_size=val_size/(test_size + val_size),
+        #     random_state=random_state,
+        #     stratify=[self.label_col,]
+        # )
+
         # Fit transforms
-        self._fit_transforms(chunk)
+        self._fit_transforms(main_df)
 
-        # Batch transform
-        self.numerical = torch.FloatTensor(
-            self.scaler.transform(
-                chunk[self.numerical_cols].values)
-        )
-        self.categorical = torch.LongTensor(
-            self.encoder.transform(chunk[self.categorical_cols].values)
-        )
+        # Create datasets with pre-computed row indices
+        datasets: List[CSVLabeledDataset] = []
+        for df in [train_df, val_df, test_df]:
+            dataset = CSVLabeledDataset.__new__(CSVLabeledDataset)
+            dataset.csv_path = self.csv_path
+            dataset.df = df.copy()
+            dataset.numerical_cols = self.numerical_cols
+            dataset.categorical_cols = self.categorical_cols
+            dataset.max_workers = self.max_workers
+            dataset.scaler = copy.deepcopy(self.scaler)
+            dataset.encoder = copy.deepcopy(self.encoder)
+            dataset._fitted = True
+            dataset._categorical_cardinalities = self._categorical_cardinalities
+            dataset.row_indices = df.index.tolist()  # Store row indices
+            dataset.num_samples = len(df)
+            dataset.label_col = self.label_col
+            datasets.append(dataset)
 
-        self.labels = torch.LongTensor(df[[self.label_col,]].values)
+        return tuple(datasets)  # type: ignore
 
     # -----------------------------------------------------------------
     def __iter__(self):
 
-        for x_num, x_cat, y in zip(self.numerical, self.categorical, self.labels):
+        # Batch transform
+        numerical = torch.FloatTensor(
+            self.scaler.transform(
+                self.df[self.numerical_cols].values)
+        )
+        categorical = torch.LongTensor(
+            self.encoder.transform(
+                self.df[self.categorical_cols].values)
+        )
+
+        labels = torch.FloatTensor(
+            self.df[[self.label_col,]].values
+        )
+
+        for x_num, x_cat, y in zip(numerical, categorical, labels):
          yield x_num, x_cat, y   # parent gives the features
+
+
+class SequenceWindowDataset(CSVLabeledDataset):
+    """
+    Dataset yielding random-length windows over a CSV file of raw data,
+    applying preprocessing and using a Transformer to compute embeddings on the fly.
+
+    Args:
+        csv_path: path to CSV file containing raw data
+        transformer: model with an `encode(x_num, x_cat) -> embeddings` method
+        numerical_cols: list of column names for numerical features
+        categorical_cols: list of column names for categorical features
+        label_col: name of the label column (0/1)
+        len_min: minimum window length
+        len_max: maximum window length
+    """
+    def __init__(
+        self,
+        transformer: nn.Module,
+        file_path: str | Path,
+        numerical_cols: List[str],
+        categorical_cols: List[str],
+        label_col: str,
+        max_workers: int = 1,
+        label_dtype: torch.dtype = torch.long,
+        len_min: int = 64,
+        len_max: int = 256
+    ) -> None:
+        # build everything the parent needs
+        super().__init__(
+            file_path=file_path,
+            numerical_cols=numerical_cols,
+            categorical_cols=categorical_cols,
+            max_workers=max_workers,
+            label_col=label_col
+        )
+        # Transformer for on-the-fly embedding
+        self.transformer: nn.Module = transformer.eval()
+
+        # Columns configuration
+        self.len_min = len_min
+        self.len_max = len_max
+
+        self.N = len(self.df)
+
+
+    def prepare_splits(
+        self,
+        test_size: float = 0.1,
+        val_size: float = 0.1,
+        random_state: Optional[int] = 42
+    ) -> Tuple['CSVDataset', 'CSVDataset', 'CSVDataset']:
+        """Prepare train/validation/test splits.
+
+        Args:
+            test_size: Fraction of data to use for test set
+            val_size: Fraction of data to use for validation set
+            random_state: Random seed for reproducibility
+
+        Returns:
+            Tuple of (train_dataset, val_dataset, test_dataset)
+        """
+        # Read and clean training data only for fitting
+        main_df = self._clean_data(self.df)
+
+        # Split data
+        sss = StratifiedShuffleSplit(
+            n_splits=1,
+            test_size=(test_size + val_size),
+            random_state=0
+        )
+        (train_index, test_val_index) = next(sss.split(main_df[self.numerical_cols + self.categorical_cols], main_df[[self.label_col]]))
+        train_df = main_df.loc[train_index, :].reset_index(drop=True)
+        test_val_df = main_df.loc[test_val_index, :].reset_index(drop=True)
+        # train_df, test_val_df = train_test_split(
+        #     main_df,
+        #     test_size=(test_size + val_size),
+        #     random_state=random_state,
+        #     stratify=[self.label_col,]
+        # )
+        sss = StratifiedShuffleSplit(
+            n_splits=1,
+            test_size=val_size/(test_size + val_size),
+            random_state=0
+        )
+        (test_index, val_index) = next(sss.split(test_val_df[self.numerical_cols + self.categorical_cols], test_val_df[[self.label_col]]))
+        test_df = test_val_df.loc[test_index, :].reset_index(drop=True)
+        val_df = test_val_df.loc[val_index, :].reset_index(drop=True)
+        # train_test_split(
+        #     test_val_df,
+        #     test_size=val_size/(test_size + val_size),
+        #     random_state=random_state,
+        #     stratify=[self.label_col,]
+        # )
+
+        # Fit transforms
+        self._fit_transforms(main_df)
+
+        # Create datasets with pre-computed row indices
+        datasets: List[SequenceWindowDataset] = []
+        for df in [train_df, val_df, test_df]:
+            dataset = SequenceWindowDataset.__new__(SequenceWindowDataset)
+            dataset.transformer = self.transformer
+            dataset.csv_path = self.csv_path
+            dataset.df = df.copy()
+            dataset.numerical_cols = self.numerical_cols
+            dataset.categorical_cols = self.categorical_cols
+            dataset.max_workers = self.max_workers
+            dataset.scaler = copy.deepcopy(self.scaler)
+            dataset.encoder = copy.deepcopy(self.encoder)
+            dataset._fitted = True
+            dataset._categorical_cardinalities = self._categorical_cardinalities
+            dataset.row_indices = df.index.tolist()  # Store row indices
+            dataset.num_samples = len(df)
+            dataset.label_col = self.label_col
+            dataset.len_min = self.len_min
+            dataset.len_max = self.len_max
+            dataset.N = len(df)
+            datasets.append(dataset)
+
+        return tuple(datasets)  # type: ignore
+
+    def __iter__(self):
+        has_anomaly = False
+        while not has_anomaly:
+            # Sample a random window length
+            L = np.random.randint(self.len_min, self.len_max)
+            start = np.random.randint(0, self.N - L)
+            end = start + L
+
+            # Batch transform
+            numerical = torch.FloatTensor(
+                self.scaler.transform(
+                    self.df[self.numerical_cols].values[start:end, :])
+            ).to(next(self.transformer.parameters()).device)
+            categorical = torch.LongTensor(
+                self.encoder.transform(
+                    self.df[self.categorical_cols].values[start:end, :])
+            ).to(next(self.transformer.parameters()).device)
+
+            labels = torch.FloatTensor(
+                self.df[[self.label_col,]].values[start:end, :]
+            ).to(next(self.transformer.parameters()).device)
+
+            # ensure there is at least one anomaly in the sequence
+            has_anomaly = (labels == 1).sum().item() > 0
+
+        for x_num, x_cat, y_lbl in zip(numerical, categorical, labels):
+            with torch.no_grad():
+                emb = self.transformer.encode(x_num.unsqueeze(0), x_cat.unsqueeze(0))
+            emb = emb.squeeze(0)
+
+            yield emb, y_lbl
+
 
 class RotationPairDataset(IterableDataset):
     """

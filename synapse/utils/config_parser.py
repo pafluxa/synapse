@@ -21,7 +21,7 @@ from typing import Any, List, Tuple
 
 import yaml
 
-from synapse.data.datasets import CSVDataset
+from synapse.data.datasets import CSVDataset, CSVLabeledDataset, SequenceWindowDataset
 
 # --------------------------------------------------------------------- #
 #  helper factories
@@ -44,6 +44,7 @@ def _default_ranges() -> List[Tuple[float, float]]:
 class RunConfiguration:
     # ————————————————————————————————— DATA ————————————————————————————
     csv_data_path: str
+    csv_clf_data_path: str
     test_fraction: float
     val_fraction: float
 
@@ -77,16 +78,16 @@ class RunConfiguration:
     run_id: str = field(default_factory=_generate_run_id)
 
     # ————————————————— INTERNAL (filled by attach_dataset) ——————————
-    training_dataset: Any | None = None
-    validation_dataset: Any | None = None
-    testing_dataset: Any | None = None
+    training_dataset: CSVDataset | CSVLabeledDataset | SequenceWindowDataset = None
+    validation_dataset: CSVDataset | CSVLabeledDataset | SequenceWindowDataset = None
+    testing_dataset: CSVDataset | CSVLabeledDataset | SequenceWindowDataset= None
 
     num_numerical: int = 0
     numerical_ranges: List[Tuple[float, float]] = field(default_factory=_default_ranges)
-    numerical_depths: List[int] = field(default_factory=list)
+    numerical_depths: List[int] = field(default_factory=list[int])
 
     num_categorical: int = 0
-    categorical_dims: List[int] = field(default_factory=list)
+    categorical_dims: List[int] = field(default_factory=list[int])
 
     num_features: int = 0
     num_samples: int = 0
@@ -108,9 +109,9 @@ class RunConfiguration:
     # -----------------------------------------------------------------
     def attach_dataset(
         self,
-        train_ds: CSVDataset,
-        val_ds: CSVDataset,
-        test_ds: CSVDataset,
+        train_ds: CSVDataset | CSVLabeledDataset | SequenceWindowDataset,
+        val_ds: CSVDataset | CSVLabeledDataset | SequenceWindowDataset,
+        test_ds: CSVDataset | CSVLabeledDataset | SequenceWindowDataset,
         default_depth: int = 8,
     ) -> None:
         """Populate fields that depend on the concrete datasets."""

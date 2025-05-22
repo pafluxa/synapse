@@ -98,7 +98,7 @@ class SnapshotGenerator:
     ):
         """Generate visualization plots for the current epoch"""
 
-        points = np.dot(codecs, proj)
+        points = codecs
         norms = np.vecdot(points, points)
         norms = norms.ravel()
         avg_norm = np.average(norms)
@@ -107,10 +107,10 @@ class SnapshotGenerator:
 
         # 1. Plot codec norms distribution
         plt.subplot(2, 2, 1)
-        bins = np.linspace(0, 2, 100)
+        bins = np.linspace(-0.1, 2.1, 100)
         plt.hist(norms / avg_norm, bins=bins, alpha=0.7, color='blue', label='Codec Norms', histtype='barstacked')
         plt.title(f'Epoch {epoch}: Codec Norms Distribution\n'
-                 f'Mean: {norms.mean():.4f}, Var: {norms.var():.6f}')
+            f'Mean: {norms.mean():.4f}, Var: {norms.var():.6f}, N: {len(norms)}')
         plt.xlabel('Norm (normalized to average norm)')
         plt.ylabel('Frequency')
         plt.xlim(0.0, 2.0)
@@ -120,7 +120,8 @@ class SnapshotGenerator:
 
         # 2. Plot first 3 dimensions of codecs
         plt.subplot(2, 2, 2, projection='3d')
-        if codecs.shape[1] >= 3:
+        # if codecs.shape[1] >= 3:
+        if False:
 
             ax = plt.gca()
             ax.set_aspect('equal')
@@ -154,7 +155,7 @@ class SnapshotGenerator:
             ax.view_init(elev, azim, roll)
             plt.legend()
         else:
-            plt.title('Not enough dimensions for 3D plot')
+            plt.title('3D plot disabled.')
 
         # 3. Plot loss components
         plt.subplot(2, 2, 3)
@@ -162,12 +163,10 @@ class SnapshotGenerator:
         ax.set_ylim(1E-3, 2.5E3)
         ax.set_yscale('log')
         loss_components = {
-            'MSE': metrics['mse_loss'],
-            'Radial': metrics['sph_rad'],
-            'Uniformity': metrics['sph_uni'],
-            'Mean norm': metrics['mean_norm']
+            'MSE': metrics['mse'],
+            'CE': metrics['ce'],
         }
-        plt.bar(loss_components.keys(), loss_components.values(), color=['blue', 'red', 'green'])
+        plt.bar(loss_components.keys(), loss_components.values(), color=['blue', 'red'])
         plt.title('Loss Components Breakdown')
         plt.ylabel('Loss Value')
 
@@ -177,10 +176,8 @@ class SnapshotGenerator:
 
         epochs = list(range(len(history)))
         plt.plot(epochs, [h['loss'] for h in history], label='loss')
-        plt.plot(epochs, [h['mse_loss'] for h in history], label='MSE')
-        plt.plot(epochs, [h['sph_rad'] for h in history], label='sph. deviation')
-        plt.plot(epochs, [h['sph_uni'] for h in history], label='uniformity')
-        plt.plot(epochs, [h['mean_norm'] for h in history], label='avg. norm')
+        plt.plot(epochs, [h['mse'] for h in history], label='MSE')
+        plt.plot(epochs, [h['ce'] for h in history], label='cross-entropy')
         plt.title('Training Progress')
         plt.xlabel('Epoch')
         plt.legend()
